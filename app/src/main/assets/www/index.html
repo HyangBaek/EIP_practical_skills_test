@@ -68,6 +68,9 @@ label.f{display:block;font-size:13px;font-weight:700;margin:12px 0 4px}
 .toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#1b1f24;color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;z-index:20;max-width:90vw;opacity:0;transition:.2s;pointer-events:none}.toast.show{opacity:1}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px}@keyframes s{to{transform:rotate(360deg)}}
 .hidden{display:none!important}
+.seg{display:flex;gap:6px;flex-wrap:wrap}.seg button{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:99px;padding:7px 12px;font:inherit;font-size:13.5px;font-weight:600}
+.seg button.on{background:var(--pri);border-color:var(--pri);color:#fff}.seg button:disabled{opacity:.4}.seg button small{font-weight:500;opacity:.8;margin-left:3px}
+.sesbar{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:8px}.sesbar span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .empty{text-align:center;padding:30px 10px;color:var(--muted)}
 </style>
 </head>
@@ -1325,18 +1328,19 @@ const DB = {
   set(k,v){return new Promise(res=>{try{const t=this.db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=()=>res(true);t.onerror=()=>res(false)}catch(e){res(false)}})}
 };
 
-const DEFAULT_SETTINGS = {apiKey:'',model:'gemini-2.5-flash',order:'seq',types:[],sources:[],quick:false,batch:3,focus:'auto',scope:'',theme:'auto',qFolder:'questions',extraUrls:'',autoSync:true,loaded:{}};
-const S = {bank:[],ai:[],progress:{},settings:{...DEFAULT_SETTINGS},cur:null,curMode:null,skip:new Set(),generating:false,view:'solve',reviewId:null};
+const DEFAULT_SETTINGS = {apiKey:'',model:'gemini-2.5-flash',order:'seq',types:[],sources:[],quick:false,batch:3,focus:'auto',scope:'',theme:'auto',target:'new',count:0,qFolder:'questions',extraUrls:'',autoSync:true,loaded:{}};
+const S = {session:null,reviewBack:null,files:{},importLog:[],importSum:'',bank:[],ai:[],progress:{},settings:{...DEFAULT_SETTINGS},cur:null,curMode:null,skip:new Set(),generating:false,view:'solve',reviewId:null};
 
 async function load(){
   await DB.open();
   S.bank = (await DB.get('bank'))||[];
   S.ai = (await DB.get('ai'))||[];
   S.progress = (await DB.get('progress'))||{};
+  S.files = (await DB.get('files'))||{};
   S.settings = {...DEFAULT_SETTINGS,...((await DB.get('settings'))||{})};
-  if(!S.settings.loaded)S.settings.loaded={};
+  if(!S.settings.loaded)S.settings.loaded={};if(!S.settings.excluded)S.settings.excluded={};
 }
-const saveBank=()=>DB.set('bank',S.bank), saveAI=()=>DB.set('ai',S.ai), saveProg=()=>DB.set('progress',S.progress), saveSet=()=>DB.set('settings',S.settings);
+const saveFiles=()=>DB.set('files',S.files), saveBank=()=>DB.set('bank',S.bank), saveAI=()=>DB.set('ai',S.ai), saveProg=()=>DB.set('progress',S.progress), saveSet=()=>DB.set('settings',S.settings);
 
 /* ================= 유틸 ================= */
 const $=s=>document.querySelector(s);
@@ -1374,6 +1378,7 @@ function parseMarkdown(text,fileName){
   // 문제 시작 패턴 선택: 3개 이상 매칭되는 첫 패턴
   let pat=null;
   for(const re of RE_Q){let c=0;for(let i=0;i<L.length;i++)if(!code[i]&&re.test(L[i])&&!RE_SRC.test(L[i]))c++;if(c>=3){pat=re;break}}
+  if(!pat){for(const re of RE_Q.slice(0,2)){if(L.some((l,i)=>!code[i]&&re.test(l)&&!RE_SRC.test(l))){pat=re;break}}}
   if(!pat)return [];
   const fallbackSrc=(fileName||'').replace(/\.[^.]+$/,'');
   let src=fallbackSrc;const starts=[];
@@ -1542,21 +1547,92 @@ function filtered(arr){const t=S.settings.types,s=S.settings.sources;return arr.
 function pendingBank(){return filtered(S.bank).filter(q=>!S.progress[q.id])}
 function pendingAI(){return S.ai.filter(q=>!S.progress[q.id]&&(!S.settings.types.length||S.settings.types.includes(q.type)))}
 function stage(){return pendingBank().length?1:2}
+/* ---- 풀이 세션: 시작 화면에서 고른 조건으로 출제 ---- */
+const TARGETS={new:'안 푼 기출',wrong:'틀린 문제',all:'전체 복습',ai:'AI 응용'};
+function wrongList(){return filtered(S.bank.concat(S.ai)).filter(q=>S.progress[q.id]&&S.progress[q.id].status==='wrong')}
+function poolFor(target,ignoreSeen){
+  const ss=S.session,seen=(!ignoreSeen&&ss)?ss.seen:new Set();
+  const f=q=>!seen.has(q.id);
+  if(target==='wrong')return wrongList().filter(f);
+  if(target==='all')return filtered(S.bank).filter(f);
+  if(target==='ai')return pendingAI().filter(f);
+  return pendingBank().filter(f);
+}
+function startSession(){
+  const st=S.settings;
+  S.session={target:st.target||'new',count:+st.count||0,order:st.order,done:0,ok:0,bad:0,quick:0,seen:new Set(),wrongIds:[],startTarget:st.target||'new'};
+  S.skip.clear();S.cur=null;S.reviewId=null;nextQuestion();
+}
+function endSession(){const ss=S.session;if(ss&&ss.done>0)return renderDone();S.session=null;S.cur=null;renderStart()}
 async function nextQuestion(){
-  S.reviewId=null;
-  let p=pendingBank().filter(q=>!S.skip.has(q.id));
-  if(!p.length&&pendingBank().length){S.skip.clear();p=pendingBank()}
-  if(p.length){S.cur=S.settings.order==='random'?p[Math.floor(Math.random()*p.length)]:p[0];return renderSolve()}
-  let a=pendingAI().filter(q=>!S.skip.has(q.id));
-  if(!a.length&&pendingAI().length){S.skip.clear();a=pendingAI()}
-  if(a.length){S.cur=a[0];renderSolve();if(a.length<=1&&S.settings.apiKey)generateBatch().catch(e=>toast('백그라운드 생성 실패: '+e.message,4000));return}
+  S.reviewId=null;S.reviewBack=null;
+  const ss=S.session;if(!ss)return renderStart();
+  if(ss.count&&ss.done>=ss.count)return renderDone();
+  let p=poolFor(ss.target).filter(q=>!S.skip.has(q.id));
+  if(!p.length&&S.skip.size){S.skip.clear();p=poolFor(ss.target)}
+  if(p.length){
+    S.cur=ss.order==='random'&&ss.target!=='ai'?p[Math.floor(Math.random()*p.length)]:p[0];renderSolve();
+    if(ss.target==='ai'&&p.length<=1&&S.settings.apiKey)generateBatch().catch(e=>toast('백그라운드 생성 실패: '+e.message,4000));
+    return;
+  }
+  if(ss.target==='new'){
+    if(!S.settings.apiKey){ss.note='조건에 맞는 기출을 모두 풀었습니다. 설정에 Gemini API 키를 넣으면 이어서 AI 응용 문제가 나옵니다.';return renderDone()}
+    ss.target='ai';toast('조건에 맞는 기출을 모두 풀었습니다 → AI 응용 문제로 넘어갑니다',3500);return nextQuestion()}
+  if(ss.target!=='ai')return renderDone();
   S.cur=null;renderSolve();
-  if(S.bank.length&&S.settings.apiKey){try{await generateBatch();nextQuestion()}catch(e){toast('생성 실패: '+e.message,5000);renderSolve(e.message)}}
+  if(S.bank.length&&S.settings.apiKey){try{await generateBatch();if(S.session===ss)nextQuestion()}catch(e){toast('생성 실패: '+e.message,5000);renderSolve(e.message)}}
+}
+function countSession(q,status){
+  const ss=S.session;if(!ss||S.reviewBack)return;
+  if(!ss.seen.has(q.id)){ss.seen.add(q.id);ss.done++}
+  else{ if(ss.last&&ss.last[q.id]==='correct')ss.ok--; if(ss.last&&ss.last[q.id]==='wrong')ss.bad--; if(ss.last&&ss.last[q.id]==='quick')ss.quick--; }
+  ss.last=ss.last||{};ss.last[q.id]=status;
+  if(status==='correct')ss.ok++;else if(status==='wrong'){ss.bad++;if(!ss.wrongIds.includes(q.id))ss.wrongIds.push(q.id)}else if(status==='quick')ss.quick++;
+}
+function renderDone(){
+  const ss=S.session,v=$('#v-solve');renderHeader();
+  const graded=ss.ok+ss.bad,rate=graded?Math.round(ss.ok/graded*100):null;
+  v.innerHTML=`<div class="card"><b>풀이 결과</b><p class="muted">${esc(TARGETS[ss.startTarget])}${ss.count?` · ${ss.count}문항`:''}</p>${ss.note?`<p class="muted" style="color:var(--mid)">${esc(ss.note)}</p>`:''}
+    <div class="stats"><div><b>${ss.done}</b>푼 문항</div><div><b>${rate===null?'-':rate+'%'}</b>정답률</div><div><b>${ss.bad}</b>틀림</div></div>
+    <p class="muted" style="margin:10px 0 0">맞힘 ${ss.ok} · 틀림 ${ss.bad} · 빠른 확인 ${ss.quick}</p>
+    ${ss.wrongIds.length?`<h3 class="sec">이번에 틀린 문제</h3><div class="list">${ss.wrongIds.map(findQ).filter(Boolean).map(q=>`<div class="it"><div class="t"><div><b>${esc(q.source)}${q.no?' '+esc(q.no)+'번':''}</b> · ${esc(q.type)}</div><div class="muted">${esc(stripMd(q.body).slice(0,70))}</div></div></div>`).join('')}</div>`:''}
+    <div class="row">${ss.wrongIds.length?'<button class="btn" id="dWrong">틀린 문제 다시</button>':''}<button class="btn" id="dHome">처음 화면</button><button class="btn pri" id="dAgain">같은 조건으로 계속</button></div></div>`;
+  $('#dHome').onclick=()=>{S.session=null;S.cur=null;renderStart()};
+  $('#dAgain').onclick=()=>startSession();
+  const w=$('#dWrong');if(w)w.onclick=()=>{S.settings.target='wrong';saveSet();startSession()};
+}
+function renderStart(){
+  const v=$('#v-solve'),st=S.settings;renderHeader();
+  if(!S.bank.length)return renderSolve();
+  const types=['단답형','서술형','코드','SQL'],srcs=[...new Set(S.bank.map(q=>q.source))];
+  const typeCnt=t=>S.bank.filter(q=>q.type===t&&(!st.sources.length||st.sources.includes(q.source))).length;
+  const cnt={new:poolFor('new',true).length,wrong:wrongList().length,all:filtered(S.bank).length,ai:pendingAI().length};
+  const graded=Object.values(S.progress).filter(p=>p.status==='correct'||p.status==='wrong');
+  const acc=graded.length?Math.round(graded.filter(p=>p.status==='correct').length/graded.length*100)+'%':'-';
+  const avail=st.target==='ai'?(cnt.ai+(st.apiKey?' + 생성':'')):cnt[st.target];
+  v.innerHTML=`<div class="card"><div class="stats"><div><b>${S.bank.filter(q=>S.progress[q.id]).length}/${S.bank.length}</b>푼 기출</div><div><b>${acc}</b>정답률</div><div><b>${S.bank.concat(S.ai).filter(q=>S.progress[q.id]&&S.progress[q.id].status==='wrong').length}</b>오답</div></div></div>
+  <div class="card"><b>무엇을 풀까요</b>
+    <label class="f">대상</label><div class="seg" id="stTarget">${Object.entries(TARGETS).map(([k,l])=>`<button data-v="${k}" class="${st.target===k?'on':''}">${l}<small>${k==='ai'?(cnt.ai||(st.apiKey?'생성':'키 필요')):cnt[k]}</small></button>`).join('')}</div>
+    <label class="f">유형 <span class="muted">(선택 없음 = 전체)</span></label><div class="seg" id="stTypes"><button data-v="" class="${!st.types.length?'on':''}">전체</button>${types.map(t=>`<button data-v="${t}" class="${st.types.includes(t)?'on':''}" ${typeCnt(t)?'':'disabled'}>${t}<small>${typeCnt(t)}</small></button>`).join('')}</div>
+    <label class="f">회차</label><select id="stSrc"><option value="">전체 회차</option>${srcs.map(x=>`<option ${st.sources.length===1&&st.sources[0]===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
+    <label class="f">순서</label><div class="seg" id="stOrder"><button data-v="seq" class="${st.order!=='random'?'on':''}">순서대로</button><button data-v="random" class="${st.order==='random'?'on':''}">랜덤</button></div>
+    <label class="f">문항 수</label><div class="seg" id="stCount">${[[0,'끝까지'],[10,'10문항'],[20,'20문항 (실전 분량)']].map(([n,l])=>`<button data-v="${n}" class="${(+st.count||0)===n?'on':''}">${l}</button>`).join('')}</div>
+    <label class="f">풀이 방식</label><div class="seg" id="stMode"><button data-v="0" class="${!st.quick?'on':''}">기본 (풀이 → 채점 → 해설)</button><button data-v="1" class="${st.quick?'on':''}">빠른 확인 (정답 바로)</button></div>
+    <p class="muted" style="margin:12px 0 0">조건에 맞는 문제: <b>${avail}</b>${st.target==='new'?' · 다 풀면 AI 응용으로 이어집니다':''}</p>
+    <div class="row"><button class="btn pri" id="stGo" ${(!avail&&!(st.target==='ai'&&st.apiKey))?'disabled':''}>시작 ▶</button></div></div>`;
+  const sv=()=>{saveSet();renderStart()};
+  v.querySelectorAll('#stTarget button').forEach(b=>b.onclick=()=>{st.target=b.dataset.v;sv()});
+  v.querySelectorAll('#stTypes button').forEach(b=>b.onclick=()=>{const t=b.dataset.v;if(!t)st.types=[];else st.types=st.types.includes(t)?st.types.filter(x=>x!==t):st.types.concat(t);sv()});
+  $('#stSrc').onchange=e=>{st.sources=e.target.value?[e.target.value]:[];sv()};
+  v.querySelectorAll('#stOrder button').forEach(b=>b.onclick=()=>{st.order=b.dataset.v;sv()});
+  v.querySelectorAll('#stCount button').forEach(b=>b.onclick=()=>{st.count=+b.dataset.v;sv()});
+  v.querySelectorAll('#stMode button').forEach(b=>b.onclick=()=>{st.quick=b.dataset.v==='1';sv()});
+  $('#stGo').onclick=()=>startSession();
 }
 function mark(q,status,extra={}){
   const p=S.progress[q.id]||{attempts:0,history:[]};
   p.status=status;p.attempts++;p.last=Date.now();p.history=(p.history||[]).slice(-9).concat([{t:Date.now(),s:status}]);Object.assign(p,extra);
-  S.progress[q.id]=p;saveProg();renderHeader();
+  S.progress[q.id]=p;saveProg();countSession(q,status);renderHeader();
 }
 function findQ(id){return S.bank.find(q=>q.id===id)||S.ai.find(q=>q.id===id)}
 async function saveQ(q){if(q.origin==='ai')await saveAI();else await saveBank()}
@@ -1582,10 +1658,13 @@ function renderSolve(err){
   if(!S.bank.length){v.innerHTML=`<div class="card empty"><p><b>기출문제를 불러오세요.</b></p><p class="muted">내장 기출: 앱의 <code>${esc(S.settings.qFolder||'questions')}</code> 폴더에 있는 파일<br>파일 선택: 폰에 저장된 .md · .json · .pdf</p><div class="row"><button class="btn pri" id="eBuilt">내장 기출 불러오기</button><button class="btn" id="eImp">파일 선택</button></div><div id="eScan"></div></div>`;$('#eImp').onclick=()=>pickFiles();$('#eBuilt').onclick=()=>openScan($('#eScan'));return}
   const q=S.cur;
   if(!q){v.innerHTML=`<div class="card empty">${S.generating?'<p><span class="spin"></span> 기출 패턴을 바탕으로 새 문제를 만드는 중…</p>':!S.settings.apiKey?'<p><b>기출을 모두 풀었습니다.</b></p><p class="muted">2단계(AI 응용 문제)는 설정에서 Gemini API 키를 입력하면 시작됩니다.</p><div class="row"><button class="btn pri" id="goSet">설정으로</button></div>':`<p>${esc(err||'문제가 없습니다.')}</p><div class="row"><button class="btn pri" id="regen">AI 문제 생성</button></div>`}</div>`;
-    const g=$('#goSet');if(g)g.onclick=()=>show('set');const r=$('#regen');if(r)r.onclick=()=>nextQuestion();return}
+    const g=$('#goSet');if(g)g.onclick=()=>show('set');if(S.session&&!S.generating&&!S.settings.apiKey){v.querySelector('.card').insertAdjacentHTML('beforeend','<div class="row"><button class="btn" id="toStart">처음 화면</button></div>');$('#toStart').onclick=()=>endSession()}const r=$('#regen');if(r)r.onclick=()=>nextQuestion();return}
   const mono=q.type==='코드'||q.type==='SQL';
   const quick=S.settings.quick;
-  v.innerHTML=`<div class="card">${S.reviewId?'<div class="muted" style="margin-bottom:6px">오답 다시 풀기</div>':''}${qHead(q)}<div class="md" id="qBody">${md(q.body)}</div>
+  const ss=S.session;
+  const bar=S.reviewBack?`<div class="sesbar"><span>${S.reviewBack==='wrong'?'오답노트에서 다시 풀기':'문제은행에서 선택한 문제'}</span><button class="btn sm" id="sesBack">돌아가기</button></div>`
+    :ss?`<div class="sesbar"><span>${esc(TARGETS[ss.target])}${S.settings.types.length?' · '+esc(S.settings.types.join('/')):''}${ss.order==='random'?' · 랜덤':''} · <b>${ss.done+1}${ss.count?'/'+ss.count:''}</b>번째</span><button class="btn sm" id="sesEnd">그만 풀기</button></div>`:'';
+  v.innerHTML=`<div class="card">${bar}${qHead(q)}<div class="md" id="qBody">${md(q.body)}</div>
   ${quick?`<div class="res mid"><div class="verdict v-mid">정답</div><div class="md">${md(q.answer||'_정답 데이터 없음_')}</div><h3 class="sec">키워드</h3>${kwHtml(q)}</div>
     <div class="row"><button class="btn" id="qConf">헷갈림 → 오답노트</button><button class="btn pri" id="qNext">다음 ▶</button></div>`
   :`<div style="margin-top:12px"><textarea id="ans" class="${mono?'mono':''}" placeholder="답 입력  ·  시간 없으면 '바로 정답' 입력" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea></div>
@@ -1593,6 +1672,8 @@ function renderSolve(err){
     <div id="res"></div>`}
   </div>`;
   hl(v);
+  const se=$('#sesEnd');if(se)se.onclick=()=>endSession();
+  const sb=$('#sesBack');if(sb)sb.onclick=()=>afterAnswer();
   if(quick){
     if(!S.progress[q.id]||S.progress[q.id].status!=='wrong')mark(q,'quick');
     $('#qNext').onclick=()=>afterAnswer();
@@ -1605,7 +1686,7 @@ function renderSolve(err){
   $('#qSkip').onclick=()=>{S.skip.add(q.id);afterAnswer()};
 }
 const QUICK_RE=/바로\s*정답|시간\s*(이\s*)?없|정답만|빨리\s*정답|답만\s*보여/;
-function afterAnswer(){if(S.reviewId){show('wrong');S.cur=null;return}nextQuestion()}
+function afterAnswer(){if(S.reviewBack){const b=S.reviewBack;S.reviewBack=null;S.reviewId=null;S.cur=null;show(b);return}nextQuestion()}
 
 function submit(user,reveal=false){
   const q=S.cur;
@@ -1659,37 +1740,51 @@ function renderWrong(){
   const v=$('#v-wrong');
   v.innerHTML=`<div class="card"><div class="row" style="margin-top:0;align-items:center"><b style="flex:1">오답 ${list.length}문항</b>${list.length?'<button class="btn sm pri" id="wAll">순서대로 다시 풀기</button>':''}</div>
   <div class="list">${list.map(q=>`<div class="it"><div class="t"><div><b>${esc(q.source)}${q.no?' '+esc(q.no)+'번':''}</b> · ${esc(q.type)}</div><div class="muted">${esc(stripMd(q.body).slice(0,80))}</div></div><button class="btn sm" data-r="${q.id}">다시</button></div>`).join('')||'<div class="empty">틀린 문제가 없습니다.</div>'}</div></div>`;
-  v.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.r);S.reviewId=S.cur.id;show('solve',true);renderSolve()});
-  const w=$('#wAll');if(w)w.onclick=()=>{S.cur=list[0];S.reviewId=S.cur.id;show('solve',true);renderSolve()};
+  v.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.r);S.reviewId=S.cur.id;S.reviewBack='wrong';show('solve',true);renderSolve()});
+  const w=$('#wAll');if(w)w.onclick=()=>{S.settings.target='wrong';saveSet();show('solve',true);startSession()};
 }
 
 /* ================= 화면: 문제은행 ================= */
-let bankQ='';
+let bankQ='',bankFile=null;
 function renderBank(){
   const v=$('#v-bank');
   const cnt={};S.bank.forEach(q=>cnt[q.type]=(cnt[q.type]||0)+1);
   const srcs=[...new Set(S.bank.map(q=>q.source))];
-  const list=S.bank.filter(q=>!bankQ||(q.body+q.answer+q.source).toLowerCase().includes(bankQ.toLowerCase()));
+  const list=S.bank.filter(q=>(bankFile===null||(q.file||'')===bankFile)&&(!bankQ||(q.body+q.answer+q.source).toLowerCase().includes(bankQ.toLowerCase())));
+  const groups={};S.bank.forEach(q=>{const k=q.file||'';(groups[k]=groups[k]||[]).push(q)});
+  const fileRows=Object.entries(groups).map(([k,qs])=>{const m=S.files[k]||{};return {k,qs,name:k?(m.name||decodeURIComponent(k.split('/').pop())):'파일 정보 없음',kind:k?(m.kind||fileKind(k)):'이전 버전',at:m.at||0}}).sort((a,b)=>b.at-a.at);
+  const fmtD=t=>{if(!t)return '';const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`};
   v.innerHTML=`<div class="card"><b>불러오기</b><p class="muted">.md·.json은 바로 파싱, .pdf는 Gemini가 문제·정답을 추출합니다(API 키 필요). 같은 문제는 중복 추가되지 않습니다.</p>
     <div class="row"><button class="btn pri" id="bBuilt">내장 기출 불러오기</button><button class="btn" id="bImp">파일 선택</button><button class="btn" id="bPaste">붙여넣기</button></div>
     <div id="bScan"></div>
     <div id="pasteBox" class="hidden"><textarea id="pasteTa" placeholder="마크다운 기출 텍스트 붙여넣기" style="margin-top:10px;min-height:160px"></textarea><div class="row"><button class="btn pri" id="pasteGo">파싱</button></div></div>
-    <div id="impLog" class="muted" style="margin-top:8px"></div></div>
+    <div id="impLog" class="muted" style="margin-top:8px">${S.importLog.join('<br>')}</div><div id="impSum">${S.importSum||''}</div></div>
   <div class="card"><div class="stats"><div><b>${S.bank.length}</b>기출</div><div><b>${S.ai.length}</b>AI 생성</div><div><b>${srcs.length}</b>회차</div></div>
     <p class="muted" style="margin:10px 0 0">${Object.entries(cnt).map(([k,n])=>`${k} ${n}`).join(' · ')||'-'}</p>
     <div class="row"><button class="btn sm" id="bExp">JSON 내보내기</button><button class="btn sm" id="bReset">진도 초기화</button><button class="btn sm" id="bDelAI">AI 문제 삭제</button><button class="btn sm" id="bDel">기출 전체 삭제</button></div></div>
-  <div class="card"><input id="bSearch" placeholder="검색 (본문·정답·회차)" value="${esc(bankQ)}">
+  <div class="card"><b>불러온 파일 ${fileRows.length}개</b>
+    <div class="list">${fileRows.map((f,i)=>{const solved=f.qs.filter(q=>S.progress[q.id]).length;return `<div class="it"><div class="t"><div><b>${esc(f.name)}</b> <span class="b">${esc(f.kind)}</span></div><div class="muted">${f.qs.length}문항 · 푼 문제 ${solved}${f.at?' · '+fmtD(f.at):''}</div></div><button class="btn sm" data-fv="${i}">보기</button><button class="btn sm" data-fd="${i}">삭제</button></div>`}).join('')||'<div class="empty">불러온 파일이 없습니다.</div>'}</div></div>
+  <div class="card">${bankFile!==null?`<div class="row" style="margin:0 0 8px;align-items:center"><span class="muted" style="flex:1">파일: <b>${esc((fileRows.find(f=>f.k===bankFile)||{}).name||'')}</b> · ${list.length}문항</span><button class="btn sm" id="bFileClr">전체 보기</button></div>`:''}<input id="bSearch" placeholder="검색 (본문·정답·회차)" value="${esc(bankQ)}">
     <div class="list">${list.slice(0,300).map(q=>`<div class="it"><div class="t"><div><b>${esc(q.source)}${q.no?' '+esc(q.no)+'번':''}</b> · ${esc(q.type)} ${S.progress[q.id]?'· '+({correct:'O',wrong:'X',quick:'△'}[S.progress[q.id].status]||''):''}</div><div class="muted">${esc(stripMd(q.body).slice(0,80))}</div></div><button class="btn sm" data-o="${q.id}">풀기</button></div>`).join('')||'<div class="empty">문제가 없습니다.</div>'}${list.length>300?`<div class="muted">… 외 ${list.length-300}문항</div>`:''}</div></div>`;
   $('#bImp').onclick=()=>pickFiles();
   $('#bBuilt').onclick=()=>openScan($('#bScan'));
   $('#bPaste').onclick=()=>$('#pasteBox').classList.toggle('hidden');
-  $('#pasteGo').onclick=async()=>{const t=$('#pasteTa').value;const qs=parseMarkdown(t,'붙여넣기');const n=addQuestions(qs);await saveBank();toast(`${qs.length}문항 인식, ${n}문항 추가`);renderBank();renderHeader()};
+  $('#pasteGo').onclick=async()=>{const t=$('#pasteTa').value;const qs=parseMarkdown(t,'붙여넣기');const d=new Date();const n=putQuestions(qs,'paste:'+d.getTime(),false,`붙여넣기 ${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`);await saveBank();toast(`${qs.length}문항 인식, ${n}문항 추가`);renderBank();renderHeader()};
   $('#bExp').onclick=()=>downloadText('jcg_bank.json',JSON.stringify({questions:S.bank,ai:S.ai,progress:S.progress},null,1));
   $('#bReset').onclick=async()=>{if(!confirm('풀이 기록(오답노트 포함)을 모두 지울까요?'))return;S.progress={};await saveProg();S.cur=null;toast('초기화 완료');renderBank();renderHeader()};
   $('#bDelAI').onclick=async()=>{if(!confirm('AI 생성 문제를 모두 삭제할까요?'))return;S.ai=[];await saveAI();renderBank();renderHeader()};
-  $('#bDel').onclick=async()=>{if(!confirm('기출 문제은행을 모두 삭제할까요?'))return;S.bank=[];await saveBank();S.cur=null;renderBank();renderHeader()};
+  $('#bDel').onclick=async()=>{if(!confirm('기출 문제은행을 모두 삭제할까요?'))return;S.bank=[];Object.keys(S.files).forEach(k=>{if(/^https?:/.test(k)){S.settings.excluded[k]=true;delete S.settings.loaded[k]}});S.files={};await saveFiles();await saveSet();bankFile=null;await saveBank();S.cur=null;renderBank();renderHeader()};
+  v.querySelectorAll('[data-fv]').forEach(b=>b.onclick=()=>{bankFile=fileRows[+b.dataset.fv].k;renderBank();$('#bSearch').scrollIntoView({block:'center'})});
+  v.querySelectorAll('[data-fd]').forEach(b=>b.onclick=async()=>{
+    const f=fileRows[+b.dataset.fd];
+    if(!confirm(`'${f.name}'에서 불러온 ${f.qs.length}문항을 문제은행에서 삭제할까요?\n(풀이 기록은 남아 있어 다시 불러오면 이어집니다)`))return;
+    const ids=new Set(f.qs.map(q=>q.id));S.bank=S.bank.filter(q=>!ids.has(q.id));
+    if(f.k){delete S.files[f.k];if(/^https?:/.test(f.k)){S.settings.excluded[f.k]=true;delete S.settings.loaded[f.k];await saveSet()}await saveFiles()}
+    if(S.cur&&ids.has(S.cur.id))S.cur=null;if(bankFile===f.k)bankFile=null;
+    await saveBank();toast(`${f.qs.length}문항 삭제`);renderBank();renderHeader()});
+  const fc=$('#bFileClr');if(fc)fc.onclick=()=>{bankFile=null;renderBank()};
   const si=$('#bSearch');si.oninput=()=>{bankQ=si.value;clearTimeout(si._t);si._t=setTimeout(()=>{renderBank();const n=$('#bSearch');n.focus();n.setSelectionRange(n.value.length,n.value.length)},350)};
-  v.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.o);S.reviewId=null;show('solve',true);renderSolve()});
+  v.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.o);S.reviewId=S.cur.id;S.reviewBack='bank';show('solve',true);renderSolve()});
 }
 
 function pickFiles(){const f=$('#fileIn');f.value='';f.click()}
@@ -1711,7 +1806,7 @@ async function importOne(file,log,{tag='',replace=false,askProgress=true}={}){
 - source는 '2026년 1회' 형식(파일명 참고: ${name}).
 출력: 아래 스키마 객체의 JSON 배열만.
 ${QSCHEMA}`}],{temperature:0.1,maxTokens:65536});
-    const qs=normalizeJson(arr,'bank');const n=putQuestions(qs,tag,replace);await saveBank();
+    const qs=normalizeJson(arr,'bank');const n=putQuestions(qs,tag,replace,name);await saveBank();
     log(`✓ ${esc(name)}: ${qs.length}문항 추출, ${n}문항 추가`);return qs.length>0;
   }
   const text=await file.text();let qs;
@@ -1721,23 +1816,68 @@ ${QSCHEMA}`}],{temperature:0.1,maxTokens:65536});
     if(j.progress&&askProgress&&confirm('파일에 풀이 기록이 있습니다. 함께 불러올까요?')){Object.assign(S.progress,j.progress);await saveProg()}
   }
   else if(/출제기준|scope/i.test(name)){S.settings.scope=text;await saveSet();log(`✓ ${esc(name)}: 출제기준 범위 저장`);return true}
-  else qs=parseMarkdown(text,name);
-  const n=putQuestions(qs,tag,replace);await saveBank();
+  else{
+    qs=parseMarkdown(text,name);
+    const weak=!qs.length||qs.filter(q=>!q.answer).length>qs.length*0.5;
+    if(weak&&S.settings.apiKey){
+      log(`<span class="spin"></span> ${esc(name)}: 형식 자동 인식 ${qs.length}문항(정답 ${qs.filter(q=>q.answer).length}) → Gemini로 다시 분석 중…`);
+      try{const g=await geminiExtractText(text,name,log);if(g.filter(q=>q.answer).length>qs.filter(q=>q.answer).length)qs=g}
+      catch(err){log(`✕ ${esc(name)}: Gemini 분석 실패 — ${esc(err.message)}`)}
+    }
+  }
+  const n=putQuestions(qs,tag,replace,name);await saveBank();
   const noAns=qs.filter(q=>!q.answer).length;
-  log(`${qs.length?'✓':'✕'} ${esc(name)}: ${qs.length}문항 인식, ${n}문항 추가${noAns?` (정답 미인식 ${noAns})`:''}${qs.length?'':' — 문제 번호 형식을 찾지 못했습니다. JSON 형식을 쓰거나 붙여넣기로 시도하세요.'}`);
+  log(`${qs.length?'✓':'✕'} ${esc(name)}: ${qs.length}문항 인식, ${n}문항 추가${qs.length>n?` (이미 있는 문항 ${qs.length-n}개 건너뜀)`:''}${noAns?` (정답 미인식 ${noAns})`:''}${qs.length?'':(S.settings.apiKey?' — 문제 번호 형식을 찾지 못했습니다.':' — 문제 번호 형식을 찾지 못했습니다. 설정에 Gemini API 키를 넣고 다시 불러오면 AI가 문제를 나눠 줍니다.')}`);
   return qs.length>0;
 }
-function putQuestions(qs,tag,replace){
-  if(tag){qs.forEach(q=>q.file=tag);if(replace)S.bank=S.bank.filter(q=>q.file!==tag)}
-  return addQuestions(qs);
+function splitChunks(text,max=24000){
+  const L=text.split('\n'),out=[];let cur=[],len=0;
+  for(const l of L){if(len>max*0.7&&/^\s*#{1,4}\s/.test(l)||len>max){out.push(cur.join('\n'));cur=[];len=0}cur.push(l);len+=l.length+1}
+  if(cur.length)out.push(cur.join('\n'));return out;
 }
-function clearSpin(){const l=$('#impLog');if(l)l.innerHTML=l.innerHTML.replace(/<span class="spin"><\/span>[^<]*<br>/g,'')}
-function bankLog(m){const l=$('#impLog');if(l)l.innerHTML+=m+'<br>'}
+async function geminiExtractText(text,name,log){
+  const chunks=splitChunks(text);let all=[];
+  for(let i=0;i<chunks.length;i++){
+    if(chunks.length>1)log(`<span class="spin"></span> ${esc(name)}: Gemini 분석 ${i+1}/${chunks.length}`);
+    const arr=await gemini([{text:`아래는 정보처리기사 실기 기출문제 텍스트(파일: ${name})의 일부(${i+1}/${chunks.length})다. 들어 있는 모든 문제를 빠짐없이 추출하라.
+- 문제 본문·보기·코드·표는 원문 그대로 유지(코드는 언어 지정 코드블록, 표는 마크다운 표)
+- 정답과 해설이 있으면 짝을 맞춰 넣고, 없으면 빈 문자열
+- source는 'YYYY년 N회' 형식(본문 제목에서 찾고 없으면 파일명 참고)
+- 잘려서 시작/끝나는 불완전한 문제는 제외
+출력: 아래 스키마 객체의 JSON 배열만.
+${QSCHEMA}
+
+[텍스트]
+${chunks[i]}`}],{temperature:0.1,maxTokens:65536});
+    all=all.concat(normalizeJson(Array.isArray(arr)?arr:[arr],'bank'));
+  }
+  return all;
+}
+function putQuestions(qs,tag,replace,name){
+  if(tag){qs.forEach(q=>q.file=tag);if(replace)S.bank=S.bank.filter(q=>q.file!==tag)}
+  const n=addQuestions(qs);
+  if(tag&&qs.length){S.files[tag]={name:name||tag,kind:fileKind(tag),at:Date.now()};saveFiles()}
+  return n;
+}
+function fileKind(tag){if(tag.startsWith('file:'))return '파일';if(tag.startsWith('paste:'))return '붙여넣기';try{return tag.startsWith(folderUrl().href)?'내장':'URL'}catch(e){return 'URL'}}
+function clearSpin(){S.importLog=S.importLog.filter(m=>!m.includes('class="spin"'));const l=$('#impLog');if(l)l.innerHTML=S.importLog.join('<br>')}
+function bankLog(m){S.importLog.push(m);const l=$('#impLog');if(l)l.innerHTML=S.importLog.join('<br>')}
+/* 불러오기 결과 요약: 토스트 + 결과 카드(바로 풀기) */
+function importSummary(before,boxSel){
+  const added=S.bank.length-before;
+  const html=`<div class="res ${added>0?'ok':'bad'}" style="margin-top:10px"><div class="verdict ${added>0?'v-ok':'v-bad'}">${added>0?`✓ ${added}문항 추가됨`:'추가된 문항 없음'}</div>
+    <div class="muted">문제은행 전체 ${S.bank.length}문항 · 아직 안 푼 기출 ${pendingBank().length}문항</div>
+    ${added>0?'<div class="row"><button class="btn pri" data-go-solve>바로 풀기 ▶</button></div>':'<div class="muted">위 로그의 ✕ 사유를 확인하세요. md 형식을 인식하지 못했다면 설정에 Gemini API 키를 넣고 다시 불러오면 AI가 문제를 나눠 줍니다.</div>'}</div>`;
+  if(boxSel==='#impSum')S.importSum=html;
+  const box=$(boxSel);if(box){box.innerHTML=html;const b=box.querySelector('[data-go-solve]');if(b)b.onclick=()=>{S.session=null;S.cur=null;show('solve')}}
+  toast(added>0?`${added}문항 추가 — 풀기 탭에서 시작하세요`:'추가된 문항이 없습니다',3500);
+  renderHeader();
+}
 $('#fileIn').onchange=async e=>{
   const files=[...e.target.files];if(!files.length)return;
-  show('bank');
-  for(const file of files){try{await importOne(file,bankLog)}catch(err){bankLog(`✕ ${esc(file.name)}: ${esc(err.message)}`)}}
-  renderBank();renderHeader();clearSpin();
+  show('bank');S.importLog=[];S.importSum='';const before=S.bank.length;
+  for(const file of files){try{await importOne(file,bankLog,{tag:'file:'+file.name,replace:true})}catch(err){bankLog(`✕ ${esc(file.name)}: ${esc(err.message)}`)}}
+  clearSpin();renderBank();importSummary(before,'#impSum');
 };
 
 /* ================= 내장 기출(폴더·URL) ================= */
@@ -1768,7 +1908,7 @@ async function listFolder(){
   throw new Error('폴더 목록을 읽을 수 없습니다. 폴더에 index.json(파일명 목록)을 두거나 GitHub Pages에서 실행하세요');
 }
 function extraList(){return String(S.settings.extraUrls||'').split('\n').map(x=>x.trim()).filter(Boolean).map(u=>{let url;try{url=new URL(u,location.href).href}catch(e){return null}return {name:decodeURIComponent(url.split('?')[0].split('/').pop()||url),url,ver:'',extra:true}}).filter(Boolean)}
-function fileStatus(f){const L=S.settings.loaded||{};if(!(f.url in L))return 'new';if(f.ver&&L[f.url]!==f.ver)return 'changed';return 'done'}
+function fileStatus(f){const L=S.settings.loaded||{};if((S.settings.excluded||{})[f.url])return 'excluded';if(!(f.url in L))return 'new';if(f.ver&&L[f.url]!==f.ver)return 'changed';return 'done'}
 async function scanSources(){
   let res={via:'',files:[],err:'',skipped:[]};
   try{res=await listFolder()}catch(e){res.err=e.message}
@@ -1784,7 +1924,7 @@ async function loadSources(files,log){
       const blob=await r.blob();const isPdf=/\.pdf$/i.test(f.name);
       const file=new File([blob],f.name,{type:isPdf?'application/pdf':(blob.type||'text/plain')});
       const done=await importOne(file,log,{tag:f.url,replace:f.status==='changed',askProgress:false});
-      if(done){S.settings.loaded[f.url]=f.ver||'done';ok++}
+      if(done){S.settings.loaded[f.url]=f.ver||'done';delete S.settings.excluded[f.url];ok++}
     }catch(err){log(`✕ ${esc(f.name)}: ${esc(err.message)}`)}
   }
   await saveSet();return ok;
@@ -1792,20 +1932,20 @@ async function loadSources(files,log){
 async function autoSync(){
   if(S.settings.autoSync===false)return;
   const r=await scanSources();
-  const todo=r.files.filter(f=>f.status!=='done'&&(!/\.pdf$/i.test(f.name)||S.settings.apiKey)&&!(/\.pdf$/i.test(f.name)&&f.status==='changed'));
+  const todo=r.files.filter(f=>f.status!=='done'&&f.status!=='excluded'&&(!/\.pdf$/i.test(f.name)||S.settings.apiKey)&&!(/\.pdf$/i.test(f.name)&&f.status==='changed'));
   if(!todo.length)return;
   const before=S.bank.length;const msgs=[];
   await loadSources(todo,m=>msgs.push(m));
   const n=S.bank.length-before;
   if(n>0)toast(`내장 기출 ${todo.length}개 파일 반영 · ${n}문항 추가`,3500);
-  renderHeader();if(S.view==='solve'&&!S.cur)nextQuestion();if(S.view==='bank')renderBank();
+  renderHeader();if(S.view==='solve'){if(!S.session)renderStart();else if(!S.cur)nextQuestion()}if(S.view==='bank')renderBank();
 }
 async function openScan(box){
   box.innerHTML='<p class="muted"><span class="spin"></span> 폴더 확인 중…</p>';
   const r=await scanSources();
-  const lab={new:'새 파일',changed:'변경됨',done:'불러옴'};
+  const lab={new:'새 파일',changed:'변경됨',done:'불러옴',excluded:'목록에서 삭제함 · 체크하면 다시 불러옴'};
   box.innerHTML=`${r.err?`<p class="muted" style="color:var(--bad)">${esc(r.err)}</p>`:`<p class="muted">${esc(r.via)}에서 ${r.files.filter(f=>!f.extra).length}개 파일 확인</p>`}
-    ${r.files.length?`<div class="list">${r.files.map((f,i)=>`<label class="it"><input type="checkbox" data-i="${i}" style="width:auto;margin-top:4px" ${f.status!=='done'&&(!/\.pdf$/i.test(f.name)||S.settings.apiKey)?'checked':''}><div class="t"><div><b>${esc(f.name)}</b></div><div class="muted">${lab[f.status]}${/\.pdf$/i.test(f.name)?' · PDF(Gemini 추출)':''}${f.extra?' · URL':''}</div></div></label>`).join('')}</div>
+    ${r.files.length?`<div class="list">${r.files.map((f,i)=>`<label class="it"><input type="checkbox" data-i="${i}" style="width:auto;margin-top:4px" ${f.status!=='done'&&f.status!=='excluded'&&(!/\.pdf$/i.test(f.name)||S.settings.apiKey)?'checked':''}><div class="t"><div><b>${esc(f.name)}</b></div><div class="muted">${lab[f.status]}${/\.pdf$/i.test(f.name)?' · PDF(Gemini 추출)':''}${f.extra?' · URL':''}</div></div></label>`).join('')}</div>
     <div class="row"><button class="btn pri" id="scanGo">선택 불러오기</button></div><div class="muted" id="scanLog" style="margin-top:8px"></div>`:r.err?'':`<p class="muted"><b>기출 폴더가 비어 있습니다.</b><br>아래 폴더에 .md · .json · .pdf 파일을 넣고 GitHub에 push한 뒤 다시 확인하세요.<br><code>${esc(decodeURIComponent(folderUrl().pathname))}</code>${(r.skipped||[]).length?`<br>지원하지 않는 형식이라 건너뛴 파일: ${r.skipped.map(esc).join(', ')}`:''}</p>`}`;
   const go=box.querySelector('#scanGo');
   if(go)go.onclick=async()=>{
@@ -1813,8 +1953,10 @@ async function openScan(box){
     if(!sel.length)return toast('파일을 선택하세요');
     go.disabled=true;go.innerHTML='<span class="spin"></span> 불러오는 중';
     const lg=box.querySelector('#scanLog');const log=m=>{lg.innerHTML+=m+'<br>'};
-    const ok=await loadSources(sel,log);lg.innerHTML=lg.innerHTML.replace(/<span class="spin"><\/span>[^<]*<br>/g,'');
-    go.disabled=false;go.textContent='선택 불러오기';toast(`${ok}개 파일 반영`);renderHeader();
+    const before=S.bank.length;await loadSources(sel,log);lg.innerHTML=lg.innerHTML.replace(/<span class="spin"><\/span>[^<]*<br>/g,'');
+    go.disabled=false;go.textContent='선택 불러오기';
+    let sum=box.querySelector('.scanSum');if(!sum){sum=document.createElement('div');sum.className='scanSum';box.appendChild(sum)}
+    sum.id='scanSum'+Date.now();importSummary(before,'#'+sum.id);
   };
 }
 
@@ -1834,17 +1976,14 @@ function renderSet(){
     <label class="f">모델</label><input id="sModel" value="${esc(s.model)}" placeholder="gemini-2.5-flash">
     <p class="muted">키는 이 기기에만 저장됩니다. 모델명은 AI Studio에서 사용 가능한 이름으로 바꿀 수 있습니다.</p>
     <div class="row"><button class="btn sm" id="sTest">연결 테스트</button></div></div>
-  <div class="card"><b>출제</b>
-    <label class="f">1단계 출제 순서</label><select id="sOrder"><option value="seq">순차 (회차·번호순)</option><option value="random">랜덤</option></select>
-    <label class="f">유형 필터 (선택 없음 = 전체)</label><div class="kw" id="sTypes">${types.map(t=>`<label class="toggle ${s.types.includes(t)?'on':''}"><input type="checkbox" value="${t}" ${s.types.includes(t)?'checked':''} class="hidden">${t}</label>`).join('')}</div>
-    <label class="f">회차 필터</label><select id="sSrc" multiple size="${Math.min(6,Math.max(2,srcs.length))}">${srcs.map(x=>`<option ${s.sources.includes(x)?'selected':''}>${esc(x)}</option>`).join('')}</select>
+  <div class="card"><b>AI 출제 (2단계)</b><p class="muted">유형·회차·순서·문항 수는 풀기 탭 시작 화면에서 고릅니다.</p>
     <label class="f">2단계 AI 출제 방향</label><select id="sFocus"><option value="auto">기출 유형 비율대로</option><option value="weak">약점(오답) 위주</option><option value="단답형">단답형 집중</option><option value="코드">코드(C/Java/Python) 집중</option><option value="SQL">SQL 집중</option><option value="서술형">서술형 집중</option></select>
     <label class="f">한 번에 생성할 문제 수</label><input id="sBatch" type="number" min="1" max="10" value="${+s.batch||3}">
     <div class="row"><button class="btn sm" id="sGen">지금 AI 문제 생성</button></div></div>
   <div class="card"><b>출제기준 범위</b><p class="muted">AI 생성 시 범위 컨텍스트로 사용됩니다. 출제기준 PDF를 불러오면 자동으로 채워집니다.</p>
     <textarea id="sScope" style="min-height:160px">${esc(s.scope)}</textarea></div>
   <div class="card"><b>화면</b><label class="f">테마</label><select id="sTheme"><option value="auto">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></div>`;
-  $('#sOrder').value=s.order;$('#sFocus').value=s.focus;$('#sTheme').value=s.theme;
+  $('#sFocus').value=s.focus;$('#sTheme').value=s.theme;
   const sv=()=>saveSet().then(renderHeader);
   $('#sFolder').onchange=e=>{s.qFolder=e.target.value.trim()||'questions';sv().then(renderSet)};
   $('#sUrls').onchange=e=>{s.extraUrls=e.target.value;sv()};
@@ -1853,13 +1992,10 @@ function renderSet(){
   $('#sForget').onclick=()=>{s.loaded={};sv();toast('다음 확인 때 모든 파일이 새 파일로 표시됩니다')};
   $('#sKey').onchange=e=>{s.apiKey=e.target.value.trim();sv()};
   $('#sModel').onchange=e=>{s.model=e.target.value.trim()||'gemini-2.5-flash';sv()};
-  $('#sOrder').onchange=e=>{s.order=e.target.value;sv()};
   $('#sFocus').onchange=e=>{s.focus=e.target.value;sv()};
   $('#sBatch').onchange=e=>{s.batch=Math.max(1,Math.min(10,+e.target.value||3));sv()};
   $('#sScope').onchange=e=>{s.scope=e.target.value;sv()};
   $('#sTheme').onchange=e=>{s.theme=e.target.value;applyTheme();sv()};
-  $('#sSrc').onchange=e=>{s.sources=[...e.target.selectedOptions].map(o=>o.value);S.cur=null;sv()};
-  v.querySelectorAll('#sTypes input').forEach(c=>c.onchange=()=>{c.parentElement.classList.toggle('on',c.checked);s.types=[...v.querySelectorAll('#sTypes input:checked')].map(x=>x.value);S.cur=null;sv()});
   $('#sTest').onclick=async e=>{e.target.disabled=true;try{const t=await gemini([{text:'"OK"라고만 답해'}],{json:false,temperature:0,maxTokens:256});toast('연결 성공: '+t.trim().slice(0,30))}catch(err){toast('실패: '+err.message,5000)}e.target.disabled=false};
   $('#sGen').onclick=async e=>{e.target.disabled=true;e.target.innerHTML='<span class="spin"></span> 생성 중';try{await generateBatch()}catch(err){toast('실패: '+err.message,5000)}e.target.disabled=false;e.target.textContent='지금 AI 문제 생성'};
 }
@@ -1869,12 +2005,12 @@ function applyTheme(){const t=S.settings.theme;if(t==='auto')document.documentEl
 function show(view,keep){
   S.view=view;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===view));
   ['solve','wrong','bank','set'].forEach(x=>$('#v-'+x).classList.toggle('hidden',x!==view));
-  if(view==='solve'&&!keep){if(!S.cur||S.progress[S.cur.id]&&!S.reviewId)nextQuestion();else renderSolve()}
+  if(view==='solve'&&!keep){if(!S.session&&!S.reviewBack)renderStart();else if(!S.cur||S.progress[S.cur.id]&&!S.reviewId)nextQuestion();else renderSolve()}
   if(view==='wrong')renderWrong();if(view==='bank')renderBank();if(view==='set')renderSet();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.v));
-$('#quickBtn').onclick=()=>{S.settings.quick=!S.settings.quick;saveSet();toast(S.settings.quick?'빠른 확인 모드 ON':'기본 모드 (풀이 → 채점 → 해설)');if(S.view==='solve')renderSolve();renderHeader()};
+$('#quickBtn').onclick=()=>{S.settings.quick=!S.settings.quick;saveSet();toast(S.settings.quick?'빠른 확인 모드 ON':'기본 모드 (풀이 → 채점 → 해설)');if(S.view==='solve'){if(S.cur)renderSolve();else if(!S.session)renderStart()}renderHeader()};
 window.addEventListener('popstate',()=>{});
 window.onAndroidBack=()=>{if(S.view!=='solve'){show('solve');return true}return false};
 
