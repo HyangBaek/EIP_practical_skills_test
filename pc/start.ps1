@@ -50,7 +50,17 @@ try {
       $rel = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath.TrimStart('/'))
       if ($rel -eq '') { $rel = 'index.html' }
       $path = [System.IO.Path]::GetFullPath((Join-Path $wwwFull $rel))
-      if ($path.StartsWith($wwwFull) -and (Test-Path $path -PathType Leaf)) {
+      $dirOf = Split-Path -Parent $path
+      if ($path.StartsWith($wwwFull) -and ($rel -like '*index.json') -and -not (Test-Path $path) -and (Test-Path $dirOf -PathType Container)) {
+        # auto-generate file list for the built-in question folder
+        $names = @(Get-ChildItem -Path $dirOf -File | Where-Object { $_.Extension -match '^\.(md|markdown|txt|json|pdf)$' -and $_.Name -ne 'index.json' } |
+                   ForEach-Object { @{ name = $_.Name; version = [string]$_.LastWriteTimeUtc.Ticks } })
+        $json = ConvertTo-Json -InputObject @{ files = $names } -Depth 4 -Compress
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+        $res.ContentType = 'application/json; charset=utf-8'
+        $res.ContentLength64 = $bytes.Length
+        $res.OutputStream.Write($bytes, 0, $bytes.Length)
+      } elseif ($path.StartsWith($wwwFull) -and (Test-Path $path -PathType Leaf)) {
         $bytes = [System.IO.File]::ReadAllBytes($path)
         $ext = [System.IO.Path]::GetExtension($path).ToLower()
         $res.ContentType = if ($mime.ContainsKey($ext)) { $mime[$ext] } else { 'application/octet-stream' }

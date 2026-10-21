@@ -62,7 +62,7 @@ h3.sec{font-size:13px;color:var(--muted);margin:14px 0 4px;letter-spacing:.02em}
 .kw{display:flex;flex-wrap:wrap;gap:6px}.kw span{background:var(--chip);border-radius:6px;padding:2px 8px;font-size:13px;font-weight:600}
 .list .it{padding:10px 0;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:flex-start}
 .list .it .t{flex:1;min-width:0;font-size:14px}.list .it .t div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.muted{color:var(--muted);font-size:13px}
+.muted{color:var(--muted);font-size:13px}.muted code{word-break:break-all}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.stats div{background:var(--chip);border-radius:8px;padding:8px;text-align:center}.stats b{display:block;font-size:18px}
 label.f{display:block;font-size:13px;font-weight:700;margin:12px 0 4px}
 .toast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#1b1f24;color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;z-index:20;max-width:90vw;opacity:0;transition:.2s;pointer-events:none}.toast.show{opacity:1}
@@ -1325,7 +1325,7 @@ const DB = {
   set(k,v){return new Promise(res=>{try{const t=this.db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=()=>res(true);t.onerror=()=>res(false)}catch(e){res(false)}})}
 };
 
-const DEFAULT_SETTINGS = {apiKey:'',model:'gemini-2.5-flash',order:'seq',types:[],sources:[],quick:false,batch:3,focus:'auto',scope:'',theme:'auto'};
+const DEFAULT_SETTINGS = {apiKey:'',model:'gemini-2.5-flash',order:'seq',types:[],sources:[],quick:false,batch:3,focus:'auto',scope:'',theme:'auto',qFolder:'questions',extraUrls:'',autoSync:true,loaded:{}};
 const S = {bank:[],ai:[],progress:{},settings:{...DEFAULT_SETTINGS},cur:null,curMode:null,skip:new Set(),generating:false,view:'solve',reviewId:null};
 
 async function load(){
@@ -1334,10 +1334,7 @@ async function load(){
   S.ai = (await DB.get('ai'))||[];
   S.progress = (await DB.get('progress'))||{};
   S.settings = {...DEFAULT_SETTINGS,...((await DB.get('settings'))||{})};
-  if(!S.bank.length){ // 앱에 번들된 기출(assets/www/questions/bank.json)이 있으면 자동 로드
-    try{const r=await fetch('questions/bank.json');if(r.ok){const j=await r.json();const n=addQuestions(normalizeJson(j,'bank'));if(n)toast(`번들 기출 ${n}문항을 불러왔습니다`);await saveBank()}}catch(e){}
-  }
-  if(!S.settings.scope){try{const r=await fetch('questions/scope.md');if(r.ok){S.settings.scope=await r.text();await saveSet()}}catch(e){}}
+  if(!S.settings.loaded)S.settings.loaded={};
 }
 const saveBank=()=>DB.set('bank',S.bank), saveAI=()=>DB.set('ai',S.ai), saveProg=()=>DB.set('progress',S.progress), saveSet=()=>DB.set('settings',S.settings);
 
@@ -1582,7 +1579,7 @@ function kwHtml(q){return q.keywords&&q.keywords.length?`<div class="kw">${q.key
 
 function renderSolve(err){
   const v=$('#v-solve');renderHeader();
-  if(!S.bank.length){v.innerHTML=`<div class="card empty"><p><b>기출문제를 불러오세요.</b></p><p class="muted">.md / .json 은 바로 파싱하고, .pdf 는 Gemini로 문제를 추출합니다.</p><div class="row"><button class="btn pri" id="eImp">파일 불러오기</button></div></div>`;$('#eImp').onclick=()=>pickFiles();return}
+  if(!S.bank.length){v.innerHTML=`<div class="card empty"><p><b>기출문제를 불러오세요.</b></p><p class="muted">내장 기출: 앱의 <code>${esc(S.settings.qFolder||'questions')}</code> 폴더에 있는 파일<br>파일 선택: 폰에 저장된 .md · .json · .pdf</p><div class="row"><button class="btn pri" id="eBuilt">내장 기출 불러오기</button><button class="btn" id="eImp">파일 선택</button></div><div id="eScan"></div></div>`;$('#eImp').onclick=()=>pickFiles();$('#eBuilt').onclick=()=>openScan($('#eScan'));return}
   const q=S.cur;
   if(!q){v.innerHTML=`<div class="card empty">${S.generating?'<p><span class="spin"></span> 기출 패턴을 바탕으로 새 문제를 만드는 중…</p>':!S.settings.apiKey?'<p><b>기출을 모두 풀었습니다.</b></p><p class="muted">2단계(AI 응용 문제)는 설정에서 Gemini API 키를 입력하면 시작됩니다.</p><div class="row"><button class="btn pri" id="goSet">설정으로</button></div>':`<p>${esc(err||'문제가 없습니다.')}</p><div class="row"><button class="btn pri" id="regen">AI 문제 생성</button></div>`}</div>`;
     const g=$('#goSet');if(g)g.onclick=()=>show('set');const r=$('#regen');if(r)r.onclick=()=>nextQuestion();return}
@@ -1674,7 +1671,8 @@ function renderBank(){
   const srcs=[...new Set(S.bank.map(q=>q.source))];
   const list=S.bank.filter(q=>!bankQ||(q.body+q.answer+q.source).toLowerCase().includes(bankQ.toLowerCase()));
   v.innerHTML=`<div class="card"><b>불러오기</b><p class="muted">.md·.json은 바로 파싱, .pdf는 Gemini가 문제·정답을 추출합니다(API 키 필요). 같은 문제는 중복 추가되지 않습니다.</p>
-    <div class="row"><button class="btn pri" id="bImp">파일 불러오기</button><button class="btn" id="bPaste">텍스트 붙여넣기</button></div>
+    <div class="row"><button class="btn pri" id="bBuilt">내장 기출 불러오기</button><button class="btn" id="bImp">파일 선택</button><button class="btn" id="bPaste">붙여넣기</button></div>
+    <div id="bScan"></div>
     <div id="pasteBox" class="hidden"><textarea id="pasteTa" placeholder="마크다운 기출 텍스트 붙여넣기" style="margin-top:10px;min-height:160px"></textarea><div class="row"><button class="btn pri" id="pasteGo">파싱</button></div></div>
     <div id="impLog" class="muted" style="margin-top:8px"></div></div>
   <div class="card"><div class="stats"><div><b>${S.bank.length}</b>기출</div><div><b>${S.ai.length}</b>AI 생성</div><div><b>${srcs.length}</b>회차</div></div>
@@ -1683,6 +1681,7 @@ function renderBank(){
   <div class="card"><input id="bSearch" placeholder="검색 (본문·정답·회차)" value="${esc(bankQ)}">
     <div class="list">${list.slice(0,300).map(q=>`<div class="it"><div class="t"><div><b>${esc(q.source)}${q.no?' '+esc(q.no)+'번':''}</b> · ${esc(q.type)} ${S.progress[q.id]?'· '+({correct:'O',wrong:'X',quick:'△'}[S.progress[q.id].status]||''):''}</div><div class="muted">${esc(stripMd(q.body).slice(0,80))}</div></div><button class="btn sm" data-o="${q.id}">풀기</button></div>`).join('')||'<div class="empty">문제가 없습니다.</div>'}${list.length>300?`<div class="muted">… 외 ${list.length-300}문항</div>`:''}</div></div>`;
   $('#bImp').onclick=()=>pickFiles();
+  $('#bBuilt').onclick=()=>openScan($('#bScan'));
   $('#bPaste').onclick=()=>$('#pasteBox').classList.toggle('hidden');
   $('#pasteGo').onclick=async()=>{const t=$('#pasteTa').value;const qs=parseMarkdown(t,'붙여넣기');const n=addQuestions(qs);await saveBank();toast(`${qs.length}문항 인식, ${n}문항 추가`);renderBank();renderHeader()};
   $('#bExp').onclick=()=>downloadText('jcg_bank.json',JSON.stringify({questions:S.bank,ai:S.ai,progress:S.progress},null,1));
@@ -1694,51 +1693,143 @@ function renderBank(){
 }
 
 function pickFiles(){const f=$('#fileIn');f.value='';f.click()}
-$('#fileIn').onchange=async e=>{
-  const files=[...e.target.files];if(!files.length)return;
-  show('bank');const log=m=>{const l=$('#impLog');if(l)l.innerHTML+=m+'<br>'};
-  for(const file of files){
-    try{
-      const name=file.name;
-      if(/\.pdf$/i.test(name)||file.type==='application/pdf'){
-        if(file.size>19*1024*1024){log(`✕ ${esc(name)}: 19MB 초과`);continue}
-        const isScope=/출제기준|기준/.test(name);
-        log(`<span class="spin"></span> ${esc(name)}: Gemini ${isScope?'출제기준 요약':'문제 추출'} 중… (1~2분)`);
-        const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(file)});
-        if(isScope){
-          const t=await gemini([{inline_data:{mime_type:'application/pdf',data:b64}},{text:'이 정보처리기사 실기 출제기준 문서를 문제 출제용 범위 목록으로 정리하라. 주요항목 > 세부항목 > 세세항목 계층을 마크다운 목록으로, 빠짐없이. 설명 문장 없이 목록만.'}],{json:false,temperature:0.1,maxTokens:16000});
-          S.settings.scope=t;await saveSet();log(`✓ ${esc(name)}: 출제기준 범위 저장 (${t.length}자) — 설정에서 확인`);
-        }else{
-          const arr=await gemini([{inline_data:{mime_type:'application/pdf',data:b64}},{text:`이 PDF는 정보처리기사 실기 기출문제집이다. 모든 문제를 빠짐없이 추출하라.
+async function importOne(file,log,{tag='',replace=false,askProgress=true}={}){
+  const name=file.name;
+  if(/\.pdf$/i.test(name)||file.type==='application/pdf'){
+    if(file.size>19*1024*1024){log(`✕ ${esc(name)}: 19MB 초과`);return false}
+    const isScope=/출제기준|기준|scope/i.test(name);
+    log(`<span class="spin"></span> ${esc(name)}: Gemini ${isScope?'출제기준 요약':'문제 추출'} 중… (1~2분)`);
+    const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(file)});
+    if(isScope){
+      const t=await gemini([{inline_data:{mime_type:'application/pdf',data:b64}},{text:'이 정보처리기사 실기 출제기준 문서를 문제 출제용 범위 목록으로 정리하라. 주요항목 > 세부항목 > 세세항목 계층을 마크다운 목록으로, 빠짐없이. 설명 문장 없이 목록만.'}],{json:false,temperature:0.1,maxTokens:16000});
+      S.settings.scope=t;await saveSet();log(`✓ ${esc(name)}: 출제기준 범위 저장 (${t.length}자) — 설정에서 확인`);return true;
+    }
+    const arr=await gemini([{inline_data:{mime_type:'application/pdf',data:b64}},{text:`이 PDF는 정보처리기사 실기 기출문제집이다. 모든 문제를 빠짐없이 추출하라.
 - 문제와 정답/해설이 다른 페이지에 있으면 번호로 짝을 맞춘다.
 - 코드는 원문 그대로(들여쓰기 유지) 언어 지정 코드블록으로, 표는 마크다운 표로, 그림은 [그림: 설명]으로 옮긴다.
 - 정답이 PDF에 없으면 answer는 빈 문자열.
 - source는 '2026년 1회' 형식(파일명 참고: ${name}).
 출력: 아래 스키마 객체의 JSON 배열만.
 ${QSCHEMA}`}],{temperature:0.1,maxTokens:65536});
-          const qs=normalizeJson(arr,'bank');const n=addQuestions(qs);await saveBank();
-          log(`✓ ${esc(name)}: ${qs.length}문항 추출, ${n}문항 추가`);
-        }
-      }else{
-        const text=await file.text();let qs;
-        if(/\.json$/i.test(name)||/^\s*[\[{]/.test(text)){const j=JSON.parse(text);qs=normalizeJson(j,'bank');if(j.ai){S.ai=S.ai.concat(normalizeJson(j.ai,'ai').filter(q=>!S.ai.some(a=>a.id===q.id)));await saveAI()}if(j.progress&&confirm('파일에 풀이 기록이 있습니다. 함께 불러올까요?')){Object.assign(S.progress,j.progress);await saveProg()}}
-        else if(/출제기준|scope/i.test(name)){S.settings.scope=text;await saveSet();log(`✓ ${esc(name)}: 출제기준 범위 저장`);continue}
-        else qs=parseMarkdown(text,name);
-        const n=addQuestions(qs);await saveBank();
-        const noAns=qs.filter(q=>!q.answer).length;
-        log(`${qs.length?'✓':'✕'} ${esc(name)}: ${qs.length}문항 인식, ${n}문항 추가${noAns?` (정답 미인식 ${noAns})`:''}${qs.length?'':' — 문제 번호 형식을 찾지 못했습니다. JSON 형식을 쓰거나 붙여넣기로 시도하세요.'}`);
-      }
-    }catch(err){log(`✕ ${esc(file.name)}: ${esc(err.message)}`)}
+    const qs=normalizeJson(arr,'bank');const n=putQuestions(qs,tag,replace);await saveBank();
+    log(`✓ ${esc(name)}: ${qs.length}문항 추출, ${n}문항 추가`);return qs.length>0;
   }
-  renderBank();renderHeader();const l=$('#impLog');
-  if(l)l.innerHTML=l.innerHTML.replace(/<span class="spin"><\/span>[^<]*<br>/g,'');
+  const text=await file.text();let qs;
+  if(/\.json$/i.test(name)||/^\s*[\[{]/.test(text)){
+    const j=JSON.parse(text);qs=normalizeJson(j,'bank');
+    if(j.ai){S.ai=S.ai.concat(normalizeJson(j.ai,'ai').filter(q=>!S.ai.some(a=>a.id===q.id)));await saveAI()}
+    if(j.progress&&askProgress&&confirm('파일에 풀이 기록이 있습니다. 함께 불러올까요?')){Object.assign(S.progress,j.progress);await saveProg()}
+  }
+  else if(/출제기준|scope/i.test(name)){S.settings.scope=text;await saveSet();log(`✓ ${esc(name)}: 출제기준 범위 저장`);return true}
+  else qs=parseMarkdown(text,name);
+  const n=putQuestions(qs,tag,replace);await saveBank();
+  const noAns=qs.filter(q=>!q.answer).length;
+  log(`${qs.length?'✓':'✕'} ${esc(name)}: ${qs.length}문항 인식, ${n}문항 추가${noAns?` (정답 미인식 ${noAns})`:''}${qs.length?'':' — 문제 번호 형식을 찾지 못했습니다. JSON 형식을 쓰거나 붙여넣기로 시도하세요.'}`);
+  return qs.length>0;
+}
+function putQuestions(qs,tag,replace){
+  if(tag){qs.forEach(q=>q.file=tag);if(replace)S.bank=S.bank.filter(q=>q.file!==tag)}
+  return addQuestions(qs);
+}
+function clearSpin(){const l=$('#impLog');if(l)l.innerHTML=l.innerHTML.replace(/<span class="spin"><\/span>[^<]*<br>/g,'')}
+function bankLog(m){const l=$('#impLog');if(l)l.innerHTML+=m+'<br>'}
+$('#fileIn').onchange=async e=>{
+  const files=[...e.target.files];if(!files.length)return;
+  show('bank');
+  for(const file of files){try{await importOne(file,bankLog)}catch(err){bankLog(`✕ ${esc(file.name)}: ${esc(err.message)}`)}}
+  renderBank();renderHeader();clearSpin();
 };
+
+/* ================= 내장 기출(폴더·URL) ================= */
+const SRC_EXT=/\.(md|markdown|txt|json|pdf)$/i;
+function folderUrl(){const f=(S.settings.qFolder||'questions').trim().replace(/^\.\//,'');return new URL(f.replace(/\/?$/,'/'),location.href)}
+function ghCandidates(){
+  const h=location.hostname;if(!/\.github\.io$/i.test(h))return [];
+  const owner=h.split('.')[0],segs=location.pathname.split('/').filter(Boolean),c=[];
+  if(segs.length&&!/\.html?$/i.test(segs[0]))c.push({owner,repo:decodeURIComponent(segs[0]),prefix:'/'+segs[0]+'/'});
+  c.push({owner,repo:h,prefix:'/'});return c;
+}
+async function listFolder(){
+  const base=folderUrl();
+  try{const r=await fetch(new URL('index.json',base),{cache:'no-store'});
+    if(r.ok){const j=await r.json();const arr=Array.isArray(j)?j:(j.files||[]);
+      return {via:'index.json',files:arr.map(x=>typeof x==='string'?{name:x}:x).filter(x=>x.name&&SRC_EXT.test(x.name)&&x.name!=='index.json'&&!/^readme/i.test(x.name))
+        .map(x=>({name:x.name,url:new URL(x.path||encodeURIComponent(x.name),base).href,ver:String(x.sha||x.version||x.size||'')}))}}}catch(e){}
+  let lastErr='';
+  for(const g of ghCandidates()){
+    if(!base.pathname.startsWith(g.prefix))continue;
+    const dir=decodeURIComponent(base.pathname.slice(g.prefix.length)).replace(/\/$/,'');
+    const r=await fetch(`https://api.github.com/repos/${g.owner}/${encodeURIComponent(g.repo)}/contents/${dir.split('/').map(encodeURIComponent).join('/')}`,{headers:{Accept:'application/vnd.github+json'},cache:'no-store'});
+    if(r.ok){const j=await r.json();if(Array.isArray(j))return {via:'GitHub 저장소',files:j.filter(x=>x.type==='file'&&SRC_EXT.test(x.name)&&x.name!=='index.json'&&!/^readme/i.test(x.name)).map(x=>({name:x.name,url:new URL(encodeURIComponent(x.name),base).href,ver:x.sha,size:x.size}))}}
+    if(r.status===403)throw new Error('GitHub API 요청 한도 초과(시간당 60회). 잠시 후 다시 시도하세요');
+    lastErr=r.status===404?`저장소에 '${dir}' 폴더가 없습니다 (push 했는지 확인)`:'HTTP '+r.status;
+  }
+  if(lastErr)throw new Error(lastErr);
+  throw new Error('폴더 목록을 읽을 수 없습니다. 폴더에 index.json(파일명 목록)을 두거나 GitHub Pages에서 실행하세요');
+}
+function extraList(){return String(S.settings.extraUrls||'').split('\n').map(x=>x.trim()).filter(Boolean).map(u=>{let url;try{url=new URL(u,location.href).href}catch(e){return null}return {name:decodeURIComponent(url.split('?')[0].split('/').pop()||url),url,ver:'',extra:true}}).filter(Boolean)}
+function fileStatus(f){const L=S.settings.loaded||{};if(!(f.url in L))return 'new';if(f.ver&&L[f.url]!==f.ver)return 'changed';return 'done'}
+async function scanSources(){
+  let res={via:'',files:[],err:''};
+  try{res=await listFolder()}catch(e){res.err=e.message}
+  res.files=res.files.concat(extraList());
+  res.files.forEach(f=>f.status=fileStatus(f));
+  return res;
+}
+async function loadSources(files,log){
+  let ok=0;
+  for(const f of files){
+    try{
+      const r=await fetch(f.url,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
+      const blob=await r.blob();const isPdf=/\.pdf$/i.test(f.name);
+      const file=new File([blob],f.name,{type:isPdf?'application/pdf':(blob.type||'text/plain')});
+      const done=await importOne(file,log,{tag:f.url,replace:f.status==='changed',askProgress:false});
+      if(done){S.settings.loaded[f.url]=f.ver||'done';ok++}
+    }catch(err){log(`✕ ${esc(f.name)}: ${esc(err.message)}`)}
+  }
+  await saveSet();return ok;
+}
+async function autoSync(){
+  if(S.settings.autoSync===false)return;
+  const r=await scanSources();
+  const todo=r.files.filter(f=>f.status!=='done'&&(!/\.pdf$/i.test(f.name)||S.settings.apiKey)&&!(/\.pdf$/i.test(f.name)&&f.status==='changed'));
+  if(!todo.length)return;
+  const before=S.bank.length;const msgs=[];
+  await loadSources(todo,m=>msgs.push(m));
+  const n=S.bank.length-before;
+  if(n>0)toast(`내장 기출 ${todo.length}개 파일 반영 · ${n}문항 추가`,3500);
+  renderHeader();if(S.view==='solve'&&!S.cur)nextQuestion();if(S.view==='bank')renderBank();
+}
+async function openScan(box){
+  box.innerHTML='<p class="muted"><span class="spin"></span> 폴더 확인 중…</p>';
+  const r=await scanSources();
+  const lab={new:'새 파일',changed:'변경됨',done:'불러옴'};
+  box.innerHTML=`${r.err?`<p class="muted" style="color:var(--bad)">${esc(r.err)}</p>`:`<p class="muted">${esc(r.via)}에서 ${r.files.filter(f=>!f.extra).length}개 파일 확인</p>`}
+    ${r.files.length?`<div class="list">${r.files.map((f,i)=>`<label class="it"><input type="checkbox" data-i="${i}" style="width:auto;margin-top:4px" ${f.status!=='done'&&(!/\.pdf$/i.test(f.name)||S.settings.apiKey)?'checked':''}><div class="t"><div><b>${esc(f.name)}</b></div><div class="muted">${lab[f.status]}${/\.pdf$/i.test(f.name)?' · PDF(Gemini 추출)':''}${f.extra?' · URL':''}</div></div></label>`).join('')}</div>
+    <div class="row"><button class="btn pri" id="scanGo">선택 불러오기</button></div><div class="muted" id="scanLog" style="margin-top:8px"></div>`:'<p class="muted">불러올 파일이 없습니다.</p>'}`;
+  const go=box.querySelector('#scanGo');
+  if(go)go.onclick=async()=>{
+    const sel=[...box.querySelectorAll('input[data-i]:checked')].map(c=>r.files[+c.dataset.i]);
+    if(!sel.length)return toast('파일을 선택하세요');
+    go.disabled=true;go.innerHTML='<span class="spin"></span> 불러오는 중';
+    const lg=box.querySelector('#scanLog');const log=m=>{lg.innerHTML+=m+'<br>'};
+    const ok=await loadSources(sel,log);lg.innerHTML=lg.innerHTML.replace(/<span class="spin"><\/span>[^<]*<br>/g,'');
+    go.disabled=false;go.textContent='선택 불러오기';toast(`${ok}개 파일 반영`);renderHeader();
+  };
+}
 
 /* ================= 화면: 설정 ================= */
 function renderSet(){
   const s=S.settings,v=$('#v-set');
   const types=['단답형','서술형','코드','SQL'];const srcs=[...new Set(S.bank.map(q=>q.source))];
-  v.innerHTML=`<div class="card"><b>Gemini API</b>
+  v.innerHTML=`<div class="card"><b>내장 기출 불러오기</b>
+    <label class="f">기출 폴더 (앱 위치 기준)</label><input id="sFolder" value="${esc(s.qFolder||'questions')}" placeholder="questions">
+    <p class="muted">현재 경로: <code>${esc(decodeURIComponent(folderUrl().href))}</code><br>이 폴더에 .md · .json · .pdf 파일을 넣고 GitHub에 push하면 목록에 나타납니다. 파일명에 '출제기준'이 있으면 출제 범위로 저장합니다.</p>
+    <label class="f">추가 파일 URL (한 줄에 하나)</label><textarea id="sUrls" placeholder="https://raw.githubusercontent.com/.../2024.md" style="min-height:70px">${esc(s.extraUrls||'')}</textarea>
+    <label class="toggle ${s.autoSync!==false?'on':''}" style="margin-top:10px;display:inline-flex"><input type="checkbox" id="sAuto" class="hidden" ${s.autoSync!==false?'checked':''}>앱 시작 시 새 파일 자동 반영</label>
+    <div class="row"><button class="btn pri" id="sScan">폴더 확인 · 불러오기</button><button class="btn" id="sForget">불러온 기록 초기화</button></div>
+    <div id="scanBox" style="margin-top:8px"></div></div>
+  <div class="card"><b>Gemini API</b>
     <label class="f">API 키</label><input id="sKey" type="password" value="${esc(s.apiKey)}" placeholder="Google AI Studio에서 발급" autocomplete="off">
     <label class="f">모델</label><input id="sModel" value="${esc(s.model)}" placeholder="gemini-2.5-flash">
     <p class="muted">키는 이 기기에만 저장됩니다. 모델명은 AI Studio에서 사용 가능한 이름으로 바꿀 수 있습니다.</p>
@@ -1755,6 +1846,11 @@ function renderSet(){
   <div class="card"><b>화면</b><label class="f">테마</label><select id="sTheme"><option value="auto">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></div>`;
   $('#sOrder').value=s.order;$('#sFocus').value=s.focus;$('#sTheme').value=s.theme;
   const sv=()=>saveSet().then(renderHeader);
+  $('#sFolder').onchange=e=>{s.qFolder=e.target.value.trim()||'questions';sv().then(renderSet)};
+  $('#sUrls').onchange=e=>{s.extraUrls=e.target.value;sv()};
+  $('#sAuto').onchange=e=>{s.autoSync=e.target.checked;e.target.parentElement.classList.toggle('on',e.target.checked);sv()};
+  $('#sScan').onclick=()=>openScan($('#scanBox'));
+  $('#sForget').onclick=()=>{s.loaded={};sv();toast('다음 확인 때 모든 파일이 새 파일로 표시됩니다')};
   $('#sKey').onchange=e=>{s.apiKey=e.target.value.trim();sv()};
   $('#sModel').onchange=e=>{s.model=e.target.value.trim()||'gemini-2.5-flash';sv()};
   $('#sOrder').onchange=e=>{s.order=e.target.value;sv()};
@@ -1782,7 +1878,7 @@ $('#quickBtn').onclick=()=>{S.settings.quick=!S.settings.quick;saveSet();toast(S
 window.addEventListener('popstate',()=>{});
 window.onAndroidBack=()=>{if(S.view!=='solve'){show('solve');return true}return false};
 
-(async()=>{await load();applyTheme();show('solve')})();
+(async()=>{await load();applyTheme();show('solve');autoSync().catch(()=>{})})();
 if('serviceWorker' in navigator&&location.hostname!=='appassets.androidplatform.net'&&(location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('sw.js').catch(()=>{});
 window.__jcg={parseMarkdown,autoGrade,detectType,normalizeJson,S};
 </script>

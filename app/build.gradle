@@ -22,3 +22,16 @@ android {
 dependencies {
     implementation 'androidx.webkit:webkit:1.11.0'
 }
+
+// APK 빌드 때 questions 폴더의 파일 목록(index.json)을 자동 생성 → 앱의 '내장 기출 불러오기'가 사용
+tasks.register('genQuestionIndex') {
+    doLast {
+        def dir = file('src/main/assets/www/questions')
+        if (!dir.exists()) return
+        def names = dir.listFiles().findAll {
+            it.isFile() && it.name ==~ /(?i).*\.(md|markdown|txt|json|pdf)/ && it.name != 'index.json' && !(it.name ==~ /(?i)readme.*/)
+        }.sort { it.name }.collect { [name: it.name, version: String.valueOf(it.lastModified())] }
+        new File(dir, 'index.json').setText(groovy.json.JsonOutput.toJson([files: names]), 'UTF-8')
+    }
+}
+preBuild.dependsOn genQuestionIndex
