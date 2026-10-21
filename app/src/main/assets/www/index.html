@@ -1760,7 +1760,7 @@ async function listFolder(){
     if(!base.pathname.startsWith(g.prefix))continue;
     const dir=decodeURIComponent(base.pathname.slice(g.prefix.length)).replace(/\/$/,'');
     const r=await fetch(`https://api.github.com/repos/${g.owner}/${encodeURIComponent(g.repo)}/contents/${dir.split('/').map(encodeURIComponent).join('/')}`,{headers:{Accept:'application/vnd.github+json'},cache:'no-store'});
-    if(r.ok){const j=await r.json();if(Array.isArray(j))return {via:'GitHub 저장소',files:j.filter(x=>x.type==='file'&&SRC_EXT.test(x.name)&&x.name!=='index.json'&&!/^readme/i.test(x.name)).map(x=>({name:x.name,url:new URL(encodeURIComponent(x.name),base).href,ver:x.sha,size:x.size}))}}
+    if(r.ok){const j=await r.json();if(Array.isArray(j))return {via:'GitHub 저장소',skipped:j.filter(x=>x.type==='file'&&!SRC_EXT.test(x.name)&&!/^\.git/.test(x.name)).map(x=>x.name),files:j.filter(x=>x.type==='file'&&SRC_EXT.test(x.name)&&x.name!=='index.json'&&!/^readme/i.test(x.name)).map(x=>({name:x.name,url:new URL(encodeURIComponent(x.name),base).href,ver:x.sha,size:x.size}))}}
     if(r.status===403)throw new Error('GitHub API 요청 한도 초과(시간당 60회). 잠시 후 다시 시도하세요');
     lastErr=r.status===404?`저장소에 '${dir}' 폴더가 없습니다 (push 했는지 확인)`:'HTTP '+r.status;
   }
@@ -1770,7 +1770,7 @@ async function listFolder(){
 function extraList(){return String(S.settings.extraUrls||'').split('\n').map(x=>x.trim()).filter(Boolean).map(u=>{let url;try{url=new URL(u,location.href).href}catch(e){return null}return {name:decodeURIComponent(url.split('?')[0].split('/').pop()||url),url,ver:'',extra:true}}).filter(Boolean)}
 function fileStatus(f){const L=S.settings.loaded||{};if(!(f.url in L))return 'new';if(f.ver&&L[f.url]!==f.ver)return 'changed';return 'done'}
 async function scanSources(){
-  let res={via:'',files:[],err:''};
+  let res={via:'',files:[],err:'',skipped:[]};
   try{res=await listFolder()}catch(e){res.err=e.message}
   res.files=res.files.concat(extraList());
   res.files.forEach(f=>f.status=fileStatus(f));
@@ -1806,7 +1806,7 @@ async function openScan(box){
   const lab={new:'새 파일',changed:'변경됨',done:'불러옴'};
   box.innerHTML=`${r.err?`<p class="muted" style="color:var(--bad)">${esc(r.err)}</p>`:`<p class="muted">${esc(r.via)}에서 ${r.files.filter(f=>!f.extra).length}개 파일 확인</p>`}
     ${r.files.length?`<div class="list">${r.files.map((f,i)=>`<label class="it"><input type="checkbox" data-i="${i}" style="width:auto;margin-top:4px" ${f.status!=='done'&&(!/\.pdf$/i.test(f.name)||S.settings.apiKey)?'checked':''}><div class="t"><div><b>${esc(f.name)}</b></div><div class="muted">${lab[f.status]}${/\.pdf$/i.test(f.name)?' · PDF(Gemini 추출)':''}${f.extra?' · URL':''}</div></div></label>`).join('')}</div>
-    <div class="row"><button class="btn pri" id="scanGo">선택 불러오기</button></div><div class="muted" id="scanLog" style="margin-top:8px"></div>`:'<p class="muted">불러올 파일이 없습니다.</p>'}`;
+    <div class="row"><button class="btn pri" id="scanGo">선택 불러오기</button></div><div class="muted" id="scanLog" style="margin-top:8px"></div>`:r.err?'':`<p class="muted"><b>기출 폴더가 비어 있습니다.</b><br>아래 폴더에 .md · .json · .pdf 파일을 넣고 GitHub에 push한 뒤 다시 확인하세요.<br><code>${esc(decodeURIComponent(folderUrl().pathname))}</code>${(r.skipped||[]).length?`<br>지원하지 않는 형식이라 건너뛴 파일: ${r.skipped.map(esc).join(', ')}`:''}</p>`}`;
   const go=box.querySelector('#scanGo');
   if(go)go.onclick=async()=>{
     const sel=[...box.querySelectorAll('input[data-i]:checked')].map(c=>r.files[+c.dataset.i]);
