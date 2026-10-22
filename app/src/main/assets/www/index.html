@@ -1328,7 +1328,8 @@ const DB = {
   set(k,v){return new Promise(res=>{try{const t=this.db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=()=>res(true);t.onerror=()=>res(false)}catch(e){res(false)}})}
 };
 
-const DEFAULT_SETTINGS = {apiKey:'',model:'gemini-2.5-flash',order:'seq',types:[],sources:[],quick:false,batch:3,focus:'auto',scope:'',theme:'auto',target:'new',count:0,qFolder:'questions',extraUrls:'',autoSync:true,loaded:{}};
+const DEFAULT_MODEL='gemini-3.8-flash';
+const DEFAULT_SETTINGS = {apiKey:'',model:DEFAULT_MODEL,order:'seq',types:[],sources:[],quick:false,batch:3,focus:'auto',scope:'',theme:'auto',target:'new',count:0,qFolder:'questions',extraUrls:'',autoSync:true,loaded:{}};
 const S = {session:null,reviewBack:null,files:{},importLog:[],importSum:'',bank:[],ai:[],progress:{},settings:{...DEFAULT_SETTINGS},cur:null,curMode:null,skip:new Set(),generating:false,view:'solve',reviewId:null};
 
 async function load(){
@@ -1338,6 +1339,7 @@ async function load(){
   S.progress = (await DB.get('progress'))||{};
   S.files = (await DB.get('files'))||{};
   S.settings = {...DEFAULT_SETTINGS,...((await DB.get('settings'))||{})};
+  if(!S.settings.model||S.settings.model==='gemini-2.5-flash'){S.settings.model=DEFAULT_MODEL;await saveSet()}
   if(!S.settings.loaded)S.settings.loaded={};if(!S.settings.excluded)S.settings.excluded={};
 }
 const saveFiles=()=>DB.set('files',S.files), saveBank=()=>DB.set('bank',S.bank), saveAI=()=>DB.set('ai',S.ai), saveProg=()=>DB.set('progress',S.progress), saveSet=()=>DB.set('settings',S.settings);
@@ -1369,7 +1371,34 @@ const RE_ANS=/^\s*(?:#{1,6}\s*)?(?:>\s*)?(?:[-*]\s+)?(?:\*\*|__)?\s*[\[【(<]?\s
 const RE_EXP=/^\s*(?:#{1,6}\s*)?(?:>\s*)?(?:[-*]\s+)?(?:\*\*|__)?\s*[\[【(<]?\s*(?:해설|풀이|설명|Explanation|해답\s*풀이)\s*[\]】)>]?\s*(?:\*\*|__)?\s*(?:[:：]|$|\s)\s*(?:\*\*|__)?/i;
 const RE_KW=/^\s*(?:[-*]\s+)?(?:\*\*)?\s*(?:핵심\s*)?키워드\s*(?:\*\*)?\s*[:：]\s*(.+)$/;
 
+/* 표 형식 기출: | 번호 | 문제(요약) | 정답 | 유형 | */
+function splitRow(line){return line.trim().replace(/^\|/,'').replace(/\|\s*$/,'').split(/(?<!\\)\|/).map(c=>c.replace(/\\\|/g,'|').trim())}
+function parseTableMd(raw,fileName){
+  const L=String(raw).replace(/\r\n?/g,'\n').split('\n'),out=[];
+  let src=(fileName||'').replace(/\.[^.]+$/,''),hdr=null;
+  for(const line of L){
+    if(/^\s*#/.test(line)){hdr=null;const m=line.match(RE_SRC);if(m)src=`${m[1]}년 ${m[2]}회`;continue}
+    if(!/^\s*\|/.test(line)){if(line.trim())hdr=null;continue}
+    const c=splitRow(line);
+    if(!hdr){
+      const ni=c.findIndex(x=>/^(번호|문항|no\.?|#)$/i.test(x)),ai=c.findIndex(x=>/정답|^답$/.test(x)),qi=c.findIndex(x=>/문제|요약|질문|내용/.test(x));
+      if(ni>=0&&ai>=0&&qi>=0)hdr={ni,ai,qi,ti:c.findIndex(x=>/유형|분류|과목/.test(x)),ei:c.findIndex(x=>/해설|풀이/.test(x))};
+      continue;
+    }
+    if(c.every(x=>/^:?-{2,}:?$/.test(x)))continue;
+    const no=parseInt(c[hdr.ni],10);if(!no)continue;
+    const body=(c[hdr.qi]||'').trim(),answer=(c[hdr.ai]||'').replace(/<br\s*\/?>/gi,'\n').trim(),cat=hdr.ti>=0?(c[hdr.ti]||''):'';
+    if(!body||!answer||/^\(.*참조\)$/.test(answer))continue;
+    let type='단답형',lang='';
+    if(/java/i.test(cat)){type='코드';lang='java'}else if(/python/i.test(cat)){type='코드';lang='python'}else if(/\(c\)|c언어/i.test(cat)){type='코드';lang='c'}else if(/^프로그래밍/.test(cat)){type='코드'}
+    else if(/sql/i.test(cat))type='SQL';else if(stripMd(answer).length>60)type='서술형';
+    const note=type==='코드'?'\n\n> 요약 문항: 원문 코드가 없어 정답(출력값·키워드)을 떠올리는 복습용입니다.':'';
+    out.push(finishQ({source:src,no,body:body+note,answer,explanation:hdr.ei>=0?(c[hdr.ei]||''):'',keywords:[],type,lang,topic:cat,summary:true,origin:'bank'}));
+  }
+  return out;
+}
 function parseMarkdown(text,fileName){
+  const tq=parseTableMd(text,fileName);if(tq.length>=3)return tq;
   text=String(text).replace(/\r\n?/g,'\n')
     .replace(/<summary>\s*([\s\S]*?)\s*<\/summary>/gi,'\n**$1**\n')
     .replace(/<\/?details[^>]*>/gi,'\n').replace(/<br\s*\/?>/gi,'\n');
@@ -1443,7 +1472,7 @@ function normalizeJson(j,origin){
     id:x.id,source:x.source||x.exam||'',no:x.no??x.number??'',topic:x.topic||'',
     body:String(x.body||x.question),answer:String(x.answer??''),explanation:String(x.explanation||''),
     keywords:Array.isArray(x.keywords)?x.keywords:(x.keywords?splitKw(x.keywords):[]),
-    type:x.type,lang:x.lang||'',origin:origin||x.origin||'bank'}));
+    type:x.type,lang:x.lang||'',grade:Array.isArray(x.grade)?x.grade:undefined,summary:!!x.summary,origin:origin||x.origin||'bank'}));
 }
 function addQuestions(list){
   const have=new Set(S.bank.map(q=>q.id));let n=0;
@@ -1456,9 +1485,11 @@ function sortBank(){S.bank.sort((a,b)=>srcKey(a.source)-srcKey(b.source)||String
 /* ================= 채점 ================= */
 const norm=s=>stripMd(s).toLowerCase().replace(/[\s'"·.,，\-_()\[\]{}:;!?~=＝]/g,'');
 function variants(p){const v=[p];const inner=[...p.matchAll(/\(([^)]+)\)/g)].map(m=>m[1]);const outer=p.replace(/\([^)]*\)/g,'');if(inner.length){v.push(outer,...inner)}return v.map(norm).filter(x=>x.length>0)}
-function isShortAnswer(q){return !/```/.test(q.answer||'')&&stripMd(q.answer).length>0&&stripMd(q.answer).length<=70}
+function isShortAnswer(q){if(q.grade&&q.grade.length)return true;return !/```/.test(q.answer||'')&&stripMd(q.answer).length>0&&stripMd(q.answer).length<=70}
 function autoGrade(q,user){
   const u=norm(user);if(!u)return {verdict:'오답',score:0};
+  if(q.grade&&q.grade.length){const h=q.grade.filter(p=>String(p).split('|').map(norm).some(v=>v&&u.includes(v))).length,r=h/q.grade.length;
+    return r===1?{verdict:'정답',score:100}:r>0?{verdict:'부분정답',score:Math.round(r*100)}:{verdict:'오답',score:0}}
   const ans=stripMd(q.answer);
   if(norm(ans)===u)return {verdict:'정답',score:100};
   let parts,mode='all';
@@ -1473,20 +1504,38 @@ function autoGrade(q,user){
 }
 
 /* ================= Gemini ================= */
-async function gemini(parts,{json=true,temperature=0.7,maxTokens=16384}={}){
+async function gemini(parts,opts={},retried=false){
+  const {json=true,temperature=0.7,maxTokens=16384}=opts;
   const key=S.settings.apiKey.trim();if(!key)throw new Error('설정에서 Gemini API 키를 입력하세요');
-  const url=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(S.settings.model.trim()||'gemini-2.5-flash')}:generateContent`;
-  const body={contents:[{role:'user',parts}],generationConfig:{temperature,maxOutputTokens:maxTokens}};
-  if(json)body.generationConfig.responseMimeType='application/json';
-  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(body)});
+  const model=(S.settings.model||'').trim()||DEFAULT_MODEL;
+  const url=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const gc={maxOutputTokens:maxTokens};
+  if(!/^gemini-[3-9]/.test(model))gc.temperature=temperature; // Gemini 3 이상은 기본 temperature 권장
+  if(json)gc.responseMimeType='application/json';
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{role:'user',parts}],generationConfig:gc})});
   const j=await r.json().catch(()=>({}));
-  if(!r.ok)throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+  if(!r.ok){
+    const msg=(j.error&&j.error.message)||('HTTP '+r.status);
+    // 종료된 모델: 오류 문구가 권하는 모델(models/xxx)로 자동 전환 후 1회 재시도
+    const sug=msg.match(/use\s+models\/([\w.\-]+)/i);
+    if(!retried&&(r.status===404||/no longer available|not found|deprecated|not supported/i.test(msg))){
+      const next=sug?sug[1]:(model!==DEFAULT_MODEL?DEFAULT_MODEL:null);
+      if(next&&next!==model){S.settings.model=next;await saveSet();toast(`모델을 ${next}(으)로 바꿔 다시 시도합니다`,3500);if(S.view==='set'){const m=$('#sModel');if(m)m.value=next}return gemini(parts,opts,true)}
+    }
+    throw new Error(msg);
+  }
   const c=j.candidates&&j.candidates[0];
-  const t=((c&&c.content&&c.content.parts)||[]).map(p=>p.text||'').join('');
+  const t=((c&&c.content&&c.content.parts)||[]).filter(p=>!p.thought).map(p=>p.text||'').join('');
   if(!t)throw new Error('빈 응답 ('+((c&&c.finishReason)||'unknown')+')');
   if(!json)return t;
   const s=t.replace(/^\s*```(?:json)?/i,'').replace(/```\s*$/,'').trim();
   try{return JSON.parse(s)}catch(e){const m=s.match(/[\[{][\s\S]*[\]}]/);if(m)return JSON.parse(m[0]);throw new Error('JSON 파싱 실패')}
+}
+async function listModels(){
+  const key=S.settings.apiKey.trim();if(!key)throw new Error('API 키를 먼저 입력하세요');
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',{headers:{'x-goog-api-key':key}});
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error((j.error&&j.error.message)||('HTTP '+r.status));
+  return (j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')&&/^models\/gemini/.test(m.name)&&!/tts|image|audio|live|embedding/i.test(m.name)).map(m=>m.name.replace('models/',''));
 }
 const QSCHEMA=`{"source":"출처(생성문항은 'AI 응용')","no":번호,"type":"단답형|서술형|코드|SQL|계산","lang":"c|java|python|sql|''","topic":"출제기준 세부항목","body":"문제(마크다운, 코드는 언어 지정 코드블록, 표는 마크다운 표)","answer":"정답(채점 가능한 형태, 빈칸이 여러 개면 ① ② 로 구분, 동의어는 '또는')","keywords":["주요 키워드 2~5개"],"explanation":"상세 해설(마크다운). 코드 문제는 변수 변화를 단계별로 추적"}`;
 
@@ -1650,7 +1699,7 @@ function renderHeader(){
 }
 
 /* ================= 화면: 풀기 ================= */
-function qHead(q){return `<div class="badges"><span class="b ${q.origin==='ai'?'ai':''}">${esc(q.source||'출처 미상')}${q.no?' · '+esc(q.no)+'번':''}</span><span class="b type">${esc(q.type)}${q.lang&&q.type!=='SQL'?' · '+esc(q.lang.toUpperCase()):''}</span>${q.topic?`<span class="b">${esc(q.topic)}</span>`:''}${S.progress[q.id]?`<span class="b">${{correct:'맞힘',wrong:'틀림',quick:'빠른확인'}[S.progress[q.id].status]||''}</span>`:''}</div>`}
+function qHead(q){return `<div class="badges"><span class="b ${q.origin==='ai'?'ai':''}">${esc(q.source||'출처 미상')}${q.no?' · '+esc(q.no)+'번':''}</span><span class="b type">${esc(q.type)}${q.lang&&q.type!=='SQL'?' · '+esc(q.lang.toUpperCase()):''}</span>${q.topic?`<span class="b">${esc(q.topic)}</span>`:''}${q.summary?'<span class="b">요약 문항</span>':''}${S.progress[q.id]?`<span class="b">${{correct:'맞힘',wrong:'틀림',quick:'빠른확인'}[S.progress[q.id].status]||''}</span>`:''}</div>`}
 function kwHtml(q){return q.keywords&&q.keywords.length?`<div class="kw">${q.keywords.map(k=>`<span>${esc(k)}</span>`).join('')}</div>`:'<span class="muted">키워드 없음</span>'}
 
 function renderSolve(err){
@@ -1966,9 +2015,9 @@ function renderSet(){
       <div class="row"><button class="btn sm" id="sForget">GitHub 불러온 기록 초기화</button></div></details></div>
   <div class="card"><b>Gemini API</b>
     <label class="f">API 키</label><input id="sKey" type="password" value="${esc(s.apiKey)}" placeholder="Google AI Studio에서 발급" autocomplete="off">
-    <label class="f">모델</label><input id="sModel" value="${esc(s.model)}" placeholder="gemini-2.5-flash">
+    <label class="f">모델</label><input id="sModel" value="${esc(s.model)}" placeholder="${DEFAULT_MODEL}" list="modelList"><datalist id="modelList"></datalist>
     <p class="muted">키는 이 기기에만 저장됩니다. 모델명은 AI Studio에서 사용 가능한 이름으로 바꿀 수 있습니다.</p>
-    <div class="row"><button class="btn sm" id="sTest">연결 테스트</button></div></div>
+    <div class="row"><button class="btn sm" id="sTest">연결 테스트</button><button class="btn sm" id="sModels">사용 가능한 모델 보기</button></div><div id="modelBox" class="kw" style="margin-top:8px"></div></div>
   <div class="card"><b>AI 출제 (2단계)</b><p class="muted">유형·회차·순서·문항 수는 풀기 탭 시작 화면에서 고릅니다.</p>
     <label class="f">2단계 AI 출제 방향</label><select id="sFocus"><option value="auto">기출 유형 비율대로</option><option value="weak">약점(오답) 위주</option><option value="단답형">단답형 집중</option><option value="코드">코드(C/Java/Python) 집중</option><option value="SQL">SQL 집중</option><option value="서술형">서술형 집중</option></select>
     <label class="f">한 번에 생성할 문제 수</label><input id="sBatch" type="number" min="1" max="10" value="${+s.batch||3}">
@@ -2004,7 +2053,10 @@ function renderSet(){
   $('#bDel').onclick=async()=>{if(!confirm('기출 문제은행을 모두 삭제할까요?'))return;S.bank=[];Object.keys(S.files).forEach(k=>{if(/^https?:/.test(k)){S.settings.excluded[k]=true;delete S.settings.loaded[k]}});S.files={};await saveFiles();await saveSet();bankFile=null;await saveBank();S.cur=null;S.session=null;S.importLog=[];S.importSum='';renderSet();renderHeader()};
   $('#sForget').onclick=()=>{s.loaded={};sv();toast('다음 확인 때 모든 파일이 새 파일로 표시됩니다')};
   $('#sKey').onchange=e=>{s.apiKey=e.target.value.trim();sv()};
-  $('#sModel').onchange=e=>{s.model=e.target.value.trim()||'gemini-2.5-flash';sv()};
+  $('#sModel').onchange=e=>{s.model=e.target.value.trim()||DEFAULT_MODEL;sv()};
+  $('#sModels').onclick=async e=>{const b=e.target;b.disabled=true;try{const ms=await listModels();$('#modelList').innerHTML=ms.map(m=>`<option value="${esc(m)}">`).join('');
+    $('#modelBox').innerHTML=ms.length?ms.map(m=>`<span data-m="${esc(m)}" style="cursor:pointer;${m===s.model?'background:var(--pri);color:#fff':''}">${esc(m)}</span>`).join(''):'<span>사용 가능한 모델이 없습니다</span>';
+    $('#modelBox').querySelectorAll('[data-m]').forEach(x=>x.onclick=()=>{s.model=x.dataset.m;$('#sModel').value=s.model;sv();toast('모델: '+s.model);$('#sModels').click()})}catch(err){toast('실패: '+err.message,5000)}b.disabled=false};
   $('#sFocus').onchange=e=>{s.focus=e.target.value;sv()};
   $('#sBatch').onchange=e=>{s.batch=Math.max(1,Math.min(10,+e.target.value||3));sv()};
   $('#sScope').onchange=e=>{s.scope=e.target.value;sv()};
