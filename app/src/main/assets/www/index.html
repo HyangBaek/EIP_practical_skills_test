@@ -1329,7 +1329,7 @@ const DB = {
 };
 
 const DEFAULT_MODEL='gemini-3.8-flash';
-const DEFAULT_SETTINGS = {apiKey:'',model:DEFAULT_MODEL,order:'seq',types:[],sources:[],quick:false,batch:3,focus:'auto',scope:'',theme:'auto',target:'new',count:0,qFolder:'questions',extraUrls:'',autoSync:true,loaded:{}};
+const DEFAULT_SETTINGS = {autoRestore:true,apiKey:'',model:DEFAULT_MODEL,order:'seq',types:[],sources:[],quick:false,batch:3,focus:'auto',scope:'',theme:'auto',target:'new',count:0,qFolder:'questions',extraUrls:'',autoSync:true,loaded:{}};
 const S = {session:null,reviewBack:null,files:{},importLog:[],importSum:'',bank:[],ai:[],progress:{},settings:{...DEFAULT_SETTINGS},cur:null,curMode:null,skip:new Set(),generating:false,view:'solve',reviewId:null};
 
 async function load(){
@@ -1699,7 +1699,7 @@ function renderHeader(){
 }
 
 /* ================= 화면: 풀기 ================= */
-function qHead(q){return `<div class="badges"><span class="b ${q.origin==='ai'?'ai':''}">${esc(q.source||'출처 미상')}${q.no?' · '+esc(q.no)+'번':''}</span><span class="b type">${esc(q.type)}${q.lang&&q.type!=='SQL'?' · '+esc(q.lang.toUpperCase()):''}</span>${q.topic?`<span class="b">${esc(q.topic)}</span>`:''}${q.summary?'<span class="b">요약 문항</span>':''}${S.progress[q.id]?`<span class="b">${{correct:'맞힘',wrong:'틀림',quick:'빠른확인'}[S.progress[q.id].status]||''}</span>`:''}</div>`}
+function qHead(q){return `<div class="badges"><span class="b ${q.origin==='ai'?'ai':''}">${esc(q.source||'출처 미상')}${q.no?' · '+esc(q.no)+'번':''}</span><span class="b type">${esc(q.type)}${q.lang&&q.type!=='SQL'?' · '+esc(q.lang.toUpperCase()):''}</span>${q.topic?`<span class="b">${esc(q.topic)}</span>`:''}${q.summary?'<span class="b">요약 문항</span>':''}${q.restored?'<span class="b ai">AI 복원</span>':''}${S.progress[q.id]?`<span class="b">${{correct:'맞힘',wrong:'틀림',quick:'빠른확인'}[S.progress[q.id].status]||''}</span>`:''}</div>`}
 function kwHtml(q){return q.keywords&&q.keywords.length?`<div class="kw">${q.keywords.map(k=>`<span>${esc(k)}</span>`).join('')}</div>`:'<span class="muted">키워드 없음</span>'}
 
 function renderSolve(err){
@@ -1713,7 +1713,9 @@ function renderSolve(err){
   const ss=S.session;
   const bar=S.reviewBack?`<div class="sesbar"><span>${S.reviewBack==='wrong'?'오답노트에서 다시 풀기':'문제은행에서 선택한 문제'}</span><button class="btn sm" id="sesBack">돌아가기</button></div>`
     :ss?`<div class="sesbar"><span>${esc(TARGETS[ss.target])}${S.settings.types.length?' · '+esc(S.settings.types.join('/')):''}${ss.order==='random'?' · 랜덤':''} · <b>${ss.done+1}${ss.count?'/'+ss.count:''}</b>번째</span><button class="btn sm" id="sesEnd">그만 풀기</button></div>`:'';
-  v.innerHTML=`<div class="card">${bar}${qHead(q)}<div class="md" id="qBody">${md(q.body)}</div>
+  const rnote=q.summary?`<div class="muted" id="restoreNote" style="margin-top:6px">${S.settings.apiKey?'<button class="btn sm" id="restoreBtn">AI로 문제 복원</button> 요약·정답을 바탕으로 시험지 형태의 문제를 만들어 저장합니다':'요약 문항입니다. 설정에 Gemini API 키를 넣으면 시험지 형태로 복원할 수 있습니다.'}</div>`
+    :q.restored?`<div class="muted" style="margin-top:6px">AI가 요약을 바탕으로 복원한 문제입니다. 실제 원문과 다를 수 있습니다.</div>`:'';
+  v.innerHTML=`<div class="card">${bar}${qHead(q)}<div class="md" id="qBody">${md(q.body)}</div>${rnote}
   ${quick?`<div class="res mid"><div class="verdict v-mid">정답</div><div class="md">${md(q.answer||'_정답 데이터 없음_')}</div><h3 class="sec">키워드</h3>${kwHtml(q)}</div>
     <div class="row"><button class="btn" id="qConf">헷갈림 → 오답노트</button><button class="btn pri" id="qNext">다음 ▶</button></div>`
   :`<div style="margin-top:12px"><textarea id="ans" class="${mono?'mono':''}" placeholder="답 입력  ·  시간 없으면 '바로 정답' 입력" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea></div>
@@ -1722,6 +1724,8 @@ function renderSolve(err){
   </div>`;
   hl(v);
   const se=$('#sesEnd');if(se)se.onclick=()=>endSession();
+  const rb=$('#restoreBtn');if(rb)rb.onclick=()=>autoRestoreCur(true);
+  if(q.summary&&!q.restored&&S.settings.autoRestore!==false&&S.settings.apiKey&&!S.settings.quick)autoRestoreCur();
   const sb=$('#sesBack');if(sb)sb.onclick=()=>afterAnswer();
   if(quick){
     if(!S.progress[q.id]||S.progress[q.id].status!=='wrong')mark(q,'quick');
@@ -1749,6 +1753,7 @@ function submit(user,reveal=false){
     ${user.trim()?`<h3 class="sec">내 답</h3><div class="md"><pre><code class="${q.lang?'language-'+esc(q.lang):''}">${esc(user)}</code></pre></div>`:''}
     <h3 class="sec">정답</h3><div class="md">${md(q.answer||'_정답 데이터 없음 — AI 해설로 확인하세요_')}</div>
     <h3 class="sec">키워드</h3>${kwHtml(q)}
+    ${q.restored&&q.origBody?`<h3 class="sec">원래 요약</h3><div class="muted">${esc(stripMd(q.origBody).replace(/요약 문항:.*$/,'').trim())}</div>`:''}
     <h3 class="sec">해설</h3><div class="md" id="expl">${q.explanation?md(q.explanation):'<span class="muted">해설이 없습니다.</span>'}</div>
     <div id="aiBox"></div>
     <div class="row">${needAI?'<button class="btn sm" id="aiGrade">AI 채점</button>':''}<button class="btn sm" id="aiExp">${q.explanation?'AI 해설 다시':'AI 해설 생성'}</button></div>
@@ -1777,7 +1782,8 @@ JSON으로만: {"verdict":"정답|부분정답|오답","score":0~100,"feedback":
 - 이론 문제: 정의 → 구분 포인트(헷갈리는 유사 개념 비교) → 암기 팁
 [문제]\n${q.body}\n[기존 정답]\n${q.answer||'(없음, 직접 풀어서 제시)'}
 JSON으로만: {"answer":"정답(기존 정답이 있으면 그대로)","keywords":["2~5개"],"explanation":"마크다운 해설"}`}],{temperature:0.3,maxTokens:12000});
-      if(!q.answer&&j.answer)q.answer=j.answer;if(j.keywords&&j.keywords.length&&(!q.keywords||!q.keywords.length))q.keywords=j.keywords;q.explanation=j.explanation||q.explanation;await saveQ(q);
+      if(!q.answer&&j.answer)q.answer=j.answer;if(j.keywords&&j.keywords.length&&(!q.keywords||!q.keywords.length))q.keywords=j.keywords;q.explanation=j.explanation||q.explanation;q.aiExp=true;await saveQ(q);
+      if(q.summary&&!q.restored&&S.settings.apiKey){restoreBatch([q]).then(n=>{if(n){const qb=$('#qBody');if(qb&&S.cur===q){qb.innerHTML=md(q.body);hl(qb);const rn=$('#restoreNote');if(rn)rn.textContent='AI가 요약을 바탕으로 복원한 문제입니다. 실제 원문과 다를 수 있습니다.';$('#expl').innerHTML=md(q.explanation);hl($('#expl'))}toast('문제 본문도 복원해 저장했습니다')}}).catch(()=>{})}
       $('#expl').innerHTML=md(q.explanation);hl($('#expl'));b.textContent='AI 해설 다시';
     }catch(err){toast(err.message,4000);b.textContent='AI 해설 생성'}b.disabled=false};
   r.scrollIntoView({behavior:'smooth',block:'start'});
@@ -1885,8 +1891,53 @@ ${chunks[i]}`}],{temperature:0.1,maxTokens:65536});
   }
   return all;
 }
+/* ---- 요약 문항 AI 복원: 요약+정답으로 시험지 형태의 문제 본문·해설을 만들어 문항에 저장 ---- */
+const AI_KEEP=['restored','origBody','aiExp','explanation','keywords','body'];
+function carryAI(oldQ,newQ){ // 같은 문항을 다시 불러와도 AI 복원·해설은 유지
+  if(oldQ.restored){newQ.restored=true;newQ.origBody=oldQ.origBody;newQ.body=oldQ.body;newQ.summary=false;if(oldQ.lang&&!newQ.lang)newQ.lang=oldQ.lang;if(oldQ.type)newQ.type=oldQ.type}
+  if(oldQ.aiExp&&(!newQ.explanation||oldQ.restored)){newQ.explanation=oldQ.explanation;newQ.aiExp=true;if(oldQ.keywords&&oldQ.keywords.length)newQ.keywords=oldQ.keywords}
+}
+function applyRestore(q,r){
+  if(!r||!r.body||String(r.body).length<10)return false;
+  q.origBody=q.origBody||q.body;q.body=String(r.body);q.restored=true;q.summary=false;
+  if(r.explanation){q.explanation=String(r.explanation);q.aiExp=true}
+  if(Array.isArray(r.keywords)&&r.keywords.length)q.keywords=r.keywords.slice(0,6);
+  if(!q.lang){const d=detectType(q.body,q.answer);if(d.lang)q.lang=d.lang}
+  return true;
+}
+async function restoreBatch(list){
+  const items=list.map((q,i)=>({id:String(i),source:q.source,no:q.no,type:q.type,lang:q.lang,topic:q.topic,summary:stripMd(q.origBody||q.body).replace(/요약 문항:.*$/,'').trim(),answer:q.answer}));
+  const arr=await gemini([{text:`너는 한국산업인력공단 정보처리기사 실기 출제위원이다. 아래 각 항목은 실제 기출문제의 '요약'과 '정답'이다. 항목마다 실제 시험지 형태의 완전한 문제를 복원하고 해설을 작성하라.
+
+규칙
+- 정답은 주어진 answer와 반드시 일치해야 한다. 문제를 풀면 정확히 그 answer가 나오도록 만든다.
+- 코드 출력 문제(C/Java/Python)는 컴파일·실행 가능한 전체 코드를 쓰고, 한 줄씩 추적해 출력이 answer와 정확히 같은지 검증한 뒤 쓴다. 요약에 나온 값·키워드(예: static, 포인터, 슬라이싱 범위)를 그대로 반영한다.
+- SQL 문제는 필요한 테이블을 마크다운 표로 제시하고, 결과가 answer와 같게 데이터를 구성한다.
+- answer에 보기 기호(ㄱ, ㄴ, ①…)가 있으면 <보기>를 만들어 그 기호가 정답이 되게 한다. 빈칸 문제는 빈칸을 (①) 형태로 표시한다.
+- 요약에 없는 세부는 실제 시험 문장 스타일로 자연스럽게 채운다. 실제 원문과 똑같을 필요는 없다.
+- body: 마크다운(문제 문장 + 코드블록/표/보기). explanation: 마크다운 해설(코드는 변수 변화 추적, 이론은 정의와 헷갈리는 개념 비교).
+
+출력: 아래 형식 객체의 JSON 배열만. id는 입력 그대로.
+[{"id":"0","body":"...","explanation":"...","keywords":["2~5개"]}]
+
+[항목]
+${JSON.stringify(items)}`}],{temperature:0.3,maxTokens:60000});
+  const res=Array.isArray(arr)?arr:[arr];let n=0;
+  res.forEach(r=>{const q=list[+r.id];if(q&&applyRestore(q,r))n++});
+  if(list.some(q=>q.origin==='ai'))await saveAI();await saveBank();
+  return n;
+}
+const restoring=new Set();
+async function autoRestoreCur(force=false){
+  const q=S.cur;if(!q||!q.summary||q.restored||!S.settings.apiKey||(!force&&S.settings.autoRestore===false)||restoring.has(q.id))return;
+  restoring.add(q.id);const box=$('#restoreNote');if(box)box.innerHTML='<span class="spin"></span> 요약 문항이라 AI가 시험지 형태로 문제를 복원하는 중…';
+  try{const n=await restoreBatch([q]);if(n&&S.cur===q&&!$('#res .res')){renderSolve()}else if(box)box.textContent=n?'복원 완료 — 다음에 이 문제를 열면 복원된 문제가 보입니다':'복원하지 못했습니다'}
+  catch(e){if(box)box.innerHTML=`복원 실패: ${esc(e.message)}`}
+  finally{restoring.delete(q.id)}
+}
+
 function putQuestions(qs,tag,replace,name){
-  if(tag){qs.forEach(q=>q.file=tag);if(replace)S.bank=S.bank.filter(q=>q.file!==tag)}
+  if(tag){const old=new Map(S.bank.filter(q=>q.file===tag||qs.some(n=>n.id===q.id)).map(q=>[q.id,q]));qs.forEach(q=>{q.file=tag;const o=old.get(q.id);if(o)carryAI(o,q)});if(replace)S.bank=S.bank.filter(q=>q.file!==tag)}
   const n=addQuestions(qs);
   if(tag&&qs.length){S.files[tag]={name:name||tag,kind:fileKind(tag),at:Date.now()};saveFiles()}
   return n;
@@ -2018,6 +2069,12 @@ function renderSet(){
     <label class="f">모델</label><input id="sModel" value="${esc(s.model)}" placeholder="${DEFAULT_MODEL}" list="modelList"><datalist id="modelList"></datalist>
     <p class="muted">키는 이 기기에만 저장됩니다. 모델명은 AI Studio에서 사용 가능한 이름으로 바꿀 수 있습니다.</p>
     <div class="row"><button class="btn sm" id="sTest">연결 테스트</button><button class="btn sm" id="sModels">사용 가능한 모델 보기</button></div><div id="modelBox" class="kw" style="margin-top:8px"></div></div>
+  <div class="card"><b>요약 문항 AI 복원</b>
+    <p class="muted">문제 원문 없이 요약·정답만 있는 문항을 AI가 시험지 형태(코드·표·보기 포함)로 복원해 저장합니다. 정답은 바꾸지 않습니다. 복원된 문제는 원문과 다를 수 있습니다.</p>
+    <p class="muted" style="margin:0">요약 문항 <b>${S.bank.filter(q=>q.summary).length}</b>개 · 복원됨 <b>${S.bank.filter(q=>q.restored).length}</b>개</p>
+    <label class="toggle ${s.autoRestore!==false?'on':''}" style="margin-top:10px;display:inline-flex"><input type="checkbox" id="sAutoRes" class="hidden" ${s.autoRestore!==false?'checked':''}>풀 때 자동 복원 (문항당 1회)</label>
+    <div class="row"><button class="btn sm" id="sResAll">남은 요약 문항 일괄 복원</button><button class="btn sm hidden" id="sResStop">중지</button></div>
+    <div id="resProg" class="muted" style="margin-top:6px"></div></div>
   <div class="card"><b>AI 출제 (2단계)</b><p class="muted">유형·회차·순서·문항 수는 풀기 탭 시작 화면에서 고릅니다.</p>
     <label class="f">2단계 AI 출제 방향</label><select id="sFocus"><option value="auto">기출 유형 비율대로</option><option value="weak">약점(오답) 위주</option><option value="단답형">단답형 집중</option><option value="코드">코드(C/Java/Python) 집중</option><option value="SQL">SQL 집중</option><option value="서술형">서술형 집중</option></select>
     <label class="f">한 번에 생성할 문제 수</label><input id="sBatch" type="number" min="1" max="10" value="${+s.batch||3}">
@@ -2062,6 +2119,17 @@ function renderSet(){
   $('#sScope').onchange=e=>{s.scope=e.target.value;sv()};
   $('#sTheme').onchange=e=>{s.theme=e.target.value;applyTheme();sv()};
   $('#sTest').onclick=async e=>{e.target.disabled=true;try{const t=await gemini([{text:'"OK"라고만 답해'}],{json:false,temperature:0,maxTokens:256});toast('연결 성공: '+t.trim().slice(0,30))}catch(err){toast('실패: '+err.message,5000)}e.target.disabled=false};
+  $('#sAutoRes').onchange=e=>{s.autoRestore=e.target.checked;e.target.parentElement.classList.toggle('on',e.target.checked);sv()};
+  $('#sResAll').onclick=async e=>{
+    const todo=S.bank.filter(q=>q.summary&&!q.restored);if(!todo.length)return toast('복원할 요약 문항이 없습니다');
+    if(!confirm(`요약 문항 ${todo.length}개를 5개씩 묶어 복원합니다. Gemini 요청 약 ${Math.ceil(todo.length/5)}회가 필요합니다. 진행할까요?`))return;
+    const b=e.target,stop=$('#sResStop'),pg=$('#resProg');let stopped=false,ok=0,fail=0;b.disabled=true;stop.classList.remove('hidden');stop.onclick=()=>{stopped=true;stop.textContent='중지 중…'};
+    for(let i=0;i<todo.length&&!stopped;i+=5){
+      pg.innerHTML=`<span class="spin"></span> ${i}/${todo.length} 처리 중 (복원 ${ok} · 실패 ${fail})`;
+      try{const chunk=todo.slice(i,i+5);const n=await restoreBatch(chunk);ok+=n;fail+=chunk.length-n}catch(err){fail+=Math.min(5,todo.length-i);pg.innerHTML=`오류: ${esc(err.message)}`;if(/API 키|quota|429|exhausted/i.test(err.message))break}
+    }
+    pg.textContent=`${stopped?'중지됨':'완료'} — 복원 ${ok}개, 실패 ${fail}개. 복원 결과는 이 기기에 저장됐습니다.`;b.disabled=false;stop.classList.add('hidden');stop.textContent='중지';renderHeader();
+  };
   $('#sGen').onclick=async e=>{e.target.disabled=true;e.target.innerHTML='<span class="spin"></span> 생성 중';try{await generateBatch()}catch(err){toast('실패: '+err.message,5000)}e.target.disabled=false;e.target.textContent='지금 AI 문제 생성'};
 }
 function applyTheme(){const t=S.settings.theme;if(t==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t)}
