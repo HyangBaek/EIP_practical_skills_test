@@ -96,7 +96,7 @@ label.f{display:block;font-size:13px;font-weight:700;margin:12px 0 4px}
   <button data-v="set">설정</button>
 </nav>
 <div class="toast" id="toast"></div>
-<input type="file" id="fileIn" class="hidden" multiple accept=".md,.markdown,.txt,.json,.pdf,text/*,application/json,application/pdf">
+<input type="file" id="fileIn" class="hidden" multiple>
 
 <script>/**
  * marked v12.0.2 - a markdown parser
@@ -1655,7 +1655,7 @@ function kwHtml(q){return q.keywords&&q.keywords.length?`<div class="kw">${q.key
 
 function renderSolve(err){
   const v=$('#v-solve');renderHeader();
-  if(!S.bank.length){v.innerHTML=`<div class="card empty"><p><b>기출문제를 불러오세요.</b></p><p class="muted">내장 기출: 앱의 <code>${esc(S.settings.qFolder||'questions')}</code> 폴더에 있는 파일<br>파일 선택: 폰에 저장된 .md · .json · .pdf</p><div class="row"><button class="btn pri" id="eBuilt">내장 기출 불러오기</button><button class="btn" id="eImp">파일 선택</button></div><div id="eScan"></div></div>`;$('#eImp').onclick=()=>pickFiles();$('#eBuilt').onclick=()=>openScan($('#eScan'));return}
+  if(!S.bank.length){v.innerHTML=`<div class="card empty"><p><b>아직 불러온 기출이 없습니다.</b></p><p class="muted">설정 탭 맨 위 '기출 불러오기'에서 파일을 넣으면<br>이 화면에서 유형·순서를 골라 풀 수 있습니다.</p><div class="row"><button class="btn pri" id="eGo">기출 불러오기로 이동</button></div></div>`;$('#eGo').onclick=()=>goImport();return}
   const q=S.cur;
   if(!q){v.innerHTML=`<div class="card empty">${S.generating?'<p><span class="spin"></span> 기출 패턴을 바탕으로 새 문제를 만드는 중…</p>':!S.settings.apiKey?'<p><b>기출을 모두 풀었습니다.</b></p><p class="muted">2단계(AI 응용 문제)는 설정에서 Gemini API 키를 입력하면 시작됩니다.</p><div class="row"><button class="btn pri" id="goSet">설정으로</button></div>':`<p>${esc(err||'문제가 없습니다.')}</p><div class="row"><button class="btn pri" id="regen">AI 문제 생성</button></div>`}</div>`;
     const g=$('#goSet');if(g)g.onclick=()=>show('set');if(S.session&&!S.generating&&!S.settings.apiKey){v.querySelector('.card').insertAdjacentHTML('beforeend','<div class="row"><button class="btn" id="toStart">처음 화면</button></div>');$('#toStart').onclick=()=>endSession()}const r=$('#regen');if(r)r.onclick=()=>nextQuestion();return}
@@ -1746,50 +1746,33 @@ function renderWrong(){
 
 /* ================= 화면: 문제은행 ================= */
 let bankQ='',bankFile=null;
+function fileGroups(){
+  const groups={};S.bank.forEach(q=>{const k=q.file||'';(groups[k]=groups[k]||[]).push(q)});
+  return Object.entries(groups).map(([k,qs])=>{const m=S.files[k]||{};return {k,qs,name:k?(m.name||decodeURIComponent(k.split('/').pop())):'파일 정보 없음 (이전 버전)',kind:k?(m.kind||fileKind(k)):'-',at:m.at||0}}).sort((a,b)=>b.at-a.at);
+}
+const fmtD=t=>{if(!t)return '';const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`};
 function renderBank(){
   const v=$('#v-bank');
+  if(!S.bank.length){v.innerHTML=`<div class="card empty"><p><b>문제은행이 비어 있습니다.</b></p><p class="muted">기출은 설정 탭의 '기출 불러오기'에서 넣습니다.</p><div class="row"><button class="btn pri" id="bGoImp">기출 불러오기로 이동</button></div></div>`;$('#bGoImp').onclick=()=>goImport();return}
   const cnt={};S.bank.forEach(q=>cnt[q.type]=(cnt[q.type]||0)+1);
-  const srcs=[...new Set(S.bank.map(q=>q.source))];
+  const srcs=[...new Set(S.bank.map(q=>q.source))];const rows=fileGroups();
+  if(bankFile!==null&&!rows.some(f=>f.k===bankFile))bankFile=null;
   const list=S.bank.filter(q=>(bankFile===null||(q.file||'')===bankFile)&&(!bankQ||(q.body+q.answer+q.source).toLowerCase().includes(bankQ.toLowerCase())));
-  const groups={};S.bank.forEach(q=>{const k=q.file||'';(groups[k]=groups[k]||[]).push(q)});
-  const fileRows=Object.entries(groups).map(([k,qs])=>{const m=S.files[k]||{};return {k,qs,name:k?(m.name||decodeURIComponent(k.split('/').pop())):'파일 정보 없음',kind:k?(m.kind||fileKind(k)):'이전 버전',at:m.at||0}}).sort((a,b)=>b.at-a.at);
-  const fmtD=t=>{if(!t)return '';const d=new Date(t);return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`};
-  v.innerHTML=`<div class="card"><b>불러오기</b><p class="muted">.md·.json은 바로 파싱, .pdf는 Gemini가 문제·정답을 추출합니다(API 키 필요). 같은 문제는 중복 추가되지 않습니다.</p>
-    <div class="row"><button class="btn pri" id="bBuilt">내장 기출 불러오기</button><button class="btn" id="bImp">파일 선택</button><button class="btn" id="bPaste">붙여넣기</button></div>
-    <div id="bScan"></div>
-    <div id="pasteBox" class="hidden"><textarea id="pasteTa" placeholder="마크다운 기출 텍스트 붙여넣기" style="margin-top:10px;min-height:160px"></textarea><div class="row"><button class="btn pri" id="pasteGo">파싱</button></div></div>
-    <div id="impLog" class="muted" style="margin-top:8px">${S.importLog.join('<br>')}</div><div id="impSum">${S.importSum||''}</div></div>
-  <div class="card"><div class="stats"><div><b>${S.bank.length}</b>기출</div><div><b>${S.ai.length}</b>AI 생성</div><div><b>${srcs.length}</b>회차</div></div>
-    <p class="muted" style="margin:10px 0 0">${Object.entries(cnt).map(([k,n])=>`${k} ${n}`).join(' · ')||'-'}</p>
-    <div class="row"><button class="btn sm" id="bExp">JSON 내보내기</button><button class="btn sm" id="bReset">진도 초기화</button><button class="btn sm" id="bDelAI">AI 문제 삭제</button><button class="btn sm" id="bDel">기출 전체 삭제</button></div></div>
-  <div class="card"><b>불러온 파일 ${fileRows.length}개</b>
-    <div class="list">${fileRows.map((f,i)=>{const solved=f.qs.filter(q=>S.progress[q.id]).length;return `<div class="it"><div class="t"><div><b>${esc(f.name)}</b> <span class="b">${esc(f.kind)}</span></div><div class="muted">${f.qs.length}문항 · 푼 문제 ${solved}${f.at?' · '+fmtD(f.at):''}</div></div><button class="btn sm" data-fv="${i}">보기</button><button class="btn sm" data-fd="${i}">삭제</button></div>`}).join('')||'<div class="empty">불러온 파일이 없습니다.</div>'}</div></div>
-  <div class="card">${bankFile!==null?`<div class="row" style="margin:0 0 8px;align-items:center"><span class="muted" style="flex:1">파일: <b>${esc((fileRows.find(f=>f.k===bankFile)||{}).name||'')}</b> · ${list.length}문항</span><button class="btn sm" id="bFileClr">전체 보기</button></div>`:''}<input id="bSearch" placeholder="검색 (본문·정답·회차)" value="${esc(bankQ)}">
-    <div class="list">${list.slice(0,300).map(q=>`<div class="it"><div class="t"><div><b>${esc(q.source)}${q.no?' '+esc(q.no)+'번':''}</b> · ${esc(q.type)} ${S.progress[q.id]?'· '+({correct:'O',wrong:'X',quick:'△'}[S.progress[q.id].status]||''):''}</div><div class="muted">${esc(stripMd(q.body).slice(0,80))}</div></div><button class="btn sm" data-o="${q.id}">풀기</button></div>`).join('')||'<div class="empty">문제가 없습니다.</div>'}${list.length>300?`<div class="muted">… 외 ${list.length-300}문항</div>`:''}</div></div>`;
-  $('#bImp').onclick=()=>pickFiles();
-  $('#bBuilt').onclick=()=>openScan($('#bScan'));
-  $('#bPaste').onclick=()=>$('#pasteBox').classList.toggle('hidden');
-  $('#pasteGo').onclick=async()=>{const t=$('#pasteTa').value;const qs=parseMarkdown(t,'붙여넣기');const d=new Date();const n=putQuestions(qs,'paste:'+d.getTime(),false,`붙여넣기 ${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`);await saveBank();toast(`${qs.length}문항 인식, ${n}문항 추가`);renderBank();renderHeader()};
-  $('#bExp').onclick=()=>downloadText('jcg_bank.json',JSON.stringify({questions:S.bank,ai:S.ai,progress:S.progress},null,1));
-  $('#bReset').onclick=async()=>{if(!confirm('풀이 기록(오답노트 포함)을 모두 지울까요?'))return;S.progress={};await saveProg();S.cur=null;toast('초기화 완료');renderBank();renderHeader()};
-  $('#bDelAI').onclick=async()=>{if(!confirm('AI 생성 문제를 모두 삭제할까요?'))return;S.ai=[];await saveAI();renderBank();renderHeader()};
-  $('#bDel').onclick=async()=>{if(!confirm('기출 문제은행을 모두 삭제할까요?'))return;S.bank=[];Object.keys(S.files).forEach(k=>{if(/^https?:/.test(k)){S.settings.excluded[k]=true;delete S.settings.loaded[k]}});S.files={};await saveFiles();await saveSet();bankFile=null;await saveBank();S.cur=null;renderBank();renderHeader()};
-  v.querySelectorAll('[data-fv]').forEach(b=>b.onclick=()=>{bankFile=fileRows[+b.dataset.fv].k;renderBank();$('#bSearch').scrollIntoView({block:'center'})});
-  v.querySelectorAll('[data-fd]').forEach(b=>b.onclick=async()=>{
-    const f=fileRows[+b.dataset.fd];
-    if(!confirm(`'${f.name}'에서 불러온 ${f.qs.length}문항을 문제은행에서 삭제할까요?\n(풀이 기록은 남아 있어 다시 불러오면 이어집니다)`))return;
-    const ids=new Set(f.qs.map(q=>q.id));S.bank=S.bank.filter(q=>!ids.has(q.id));
-    if(f.k){delete S.files[f.k];if(/^https?:/.test(f.k)){S.settings.excluded[f.k]=true;delete S.settings.loaded[f.k];await saveSet()}await saveFiles()}
-    if(S.cur&&ids.has(S.cur.id))S.cur=null;if(bankFile===f.k)bankFile=null;
-    await saveBank();toast(`${f.qs.length}문항 삭제`);renderBank();renderHeader()});
-  const fc=$('#bFileClr');if(fc)fc.onclick=()=>{bankFile=null;renderBank()};
+  v.innerHTML=`<div class="card"><div class="stats"><div><b>${S.bank.length}</b>기출</div><div><b>${S.ai.length}</b>AI 생성</div><div><b>${rows.length}</b>파일</div></div>
+    <p class="muted" style="margin:10px 0 0">${Object.entries(cnt).map(([k,n])=>`${k} ${n}`).join(' · ')} · 회차 ${srcs.length}개</p></div>
+  <div class="card"><select id="bFile"><option value="__all">전체 파일 (${S.bank.length}문항)</option>${rows.map((f,i)=>`<option value="${i}" ${bankFile===f.k?'selected':''}>${esc(f.name)} (${f.qs.length})</option>`).join('')}</select>
+    <input id="bSearch" placeholder="검색 (본문·정답·회차)" value="${esc(bankQ)}" style="margin-top:8px">
+    <div class="list">${list.slice(0,300).map(q=>`<div class="it"><div class="t"><div><b>${esc(q.source)}${q.no?' '+esc(q.no)+'번':''}</b> · ${esc(q.type)} ${S.progress[q.id]?'· '+({correct:'O',wrong:'X',quick:'△'}[S.progress[q.id].status]||''):''}</div><div class="muted">${esc(stripMd(q.body).slice(0,80))}</div></div><button class="btn sm" data-o="${q.id}">풀기</button></div>`).join('')||'<div class="empty">조건에 맞는 문제가 없습니다.</div>'}${list.length>300?`<div class="muted">… 외 ${list.length-300}문항</div>`:''}</div></div>`;
+  $('#bFile').onchange=e=>{bankFile=e.target.value==='__all'?null:rows[+e.target.value].k;renderBank()};
   const si=$('#bSearch');si.oninput=()=>{bankQ=si.value;clearTimeout(si._t);si._t=setTimeout(()=>{renderBank();const n=$('#bSearch');n.focus();n.setSelectionRange(n.value.length,n.value.length)},350)};
   v.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.o);S.reviewId=S.cur.id;S.reviewBack='bank';show('solve',true);renderSolve()});
 }
+function goImport(){show('set');const c=$('#impCard');if(c)c.scrollIntoView({block:'start'})}
 
 function pickFiles(){const f=$('#fileIn');f.value='';f.click()}
 async function importOne(file,log,{tag='',replace=false,askProgress=true}={}){
   const name=file.name;
+  if(!SRC_EXT.test(name)&&file.type!=='application/pdf'){log(`✕ ${esc(name)}: 지원하지 않는 형식 (.md · .txt · .json · .pdf 만 가능)`);return false}
   if(/\.pdf$/i.test(name)||file.type==='application/pdf'){
     if(file.size>19*1024*1024){log(`✕ ${esc(name)}: 19MB 초과`);return false}
     const isScope=/출제기준|기준|scope/i.test(name);
@@ -1865,20 +1848,24 @@ function bankLog(m){S.importLog.push(m);const l=$('#impLog');if(l)l.innerHTML=S.
 /* 불러오기 결과 요약: 토스트 + 결과 카드(바로 풀기) */
 function importSummary(before,boxSel){
   const added=S.bank.length-before;
+  const dupOnly=added===0&&S.importLog.some(m=>m.includes('이미 있는 문항'))&&!S.importLog.some(m=>m.includes('✕'));
+  if(dupOnly){S.importSum=`<div class="res" style="margin-top:10px"><div class="verdict">새로 추가된 문항 없음</div><div class="muted">이미 불러온 문항과 같아서 건너뛰었습니다. 문제은행 전체 ${S.bank.length}문항</div></div>`;const bx=$(boxSel);if(bx)bx.innerHTML=S.importSum;toast('이미 불러온 문항입니다',3000);renderHeader();return}
   const html=`<div class="res ${added>0?'ok':'bad'}" style="margin-top:10px"><div class="verdict ${added>0?'v-ok':'v-bad'}">${added>0?`✓ ${added}문항 추가됨`:'추가된 문항 없음'}</div>
     <div class="muted">문제은행 전체 ${S.bank.length}문항 · 아직 안 푼 기출 ${pendingBank().length}문항</div>
-    ${added>0?'<div class="row"><button class="btn pri" data-go-solve>바로 풀기 ▶</button></div>':'<div class="muted">위 로그의 ✕ 사유를 확인하세요. md 형식을 인식하지 못했다면 설정에 Gemini API 키를 넣고 다시 불러오면 AI가 문제를 나눠 줍니다.</div>'}</div>`;
-  if(boxSel==='#impSum')S.importSum=html;
+    ${added>0?'<div class="row"><button class="btn pri" data-go-solve>바로 풀기 ▶</button></div>':'<div class="muted">위 로그의 ✕ 사유를 확인하세요. md 형식을 인식하지 못했다면 아래 Gemini API 키를 넣고 다시 불러오면 AI가 문제를 나눠 줍니다.</div>'}</div>`;
+  S.importSum=html;
   const box=$(boxSel);if(box){box.innerHTML=html;const b=box.querySelector('[data-go-solve]');if(b)b.onclick=()=>{S.session=null;S.cur=null;show('solve')}}
   toast(added>0?`${added}문항 추가 — 풀기 탭에서 시작하세요`:'추가된 문항이 없습니다',3500);
   renderHeader();
 }
 $('#fileIn').onchange=async e=>{
   const files=[...e.target.files];if(!files.length)return;
-  show('bank');S.importLog=[];S.importSum='';const before=S.bank.length;
+  S.importLog=[`파일 ${files.length}개 선택됨: ${files.map(f=>esc(f.name)).join(', ')}`];S.importSum='';const before=S.bank.length;
+  goImport();
   for(const file of files){try{await importOne(file,bankLog,{tag:'file:'+file.name,replace:true})}catch(err){bankLog(`✕ ${esc(file.name)}: ${esc(err.message)}`)}}
-  clearSpin();renderBank();importSummary(before,'#impSum');
+  clearSpin();finishImport(before);
 };
+function finishImport(before){S.cur=S.session?S.cur:null;if(S.view==='set')renderSet();importSummary(before,'#impSum');const c=$('#impSum');if(c)c.scrollIntoView({block:'center'})}
 
 /* ================= 내장 기출(폴더·URL) ================= */
 const SRC_EXT=/\.(md|markdown|txt|json|pdf)$/i;
@@ -1938,7 +1925,7 @@ async function autoSync(){
   await loadSources(todo,m=>msgs.push(m));
   const n=S.bank.length-before;
   if(n>0)toast(`내장 기출 ${todo.length}개 파일 반영 · ${n}문항 추가`,3500);
-  renderHeader();if(S.view==='solve'){if(!S.session)renderStart();else if(!S.cur)nextQuestion()}if(S.view==='bank')renderBank();
+  renderHeader();if(S.view==='solve'){if(!S.session)renderStart();else if(!S.cur)nextQuestion()}if(S.view==='bank')renderBank();if(S.view==='set')renderSet();
 }
 async function openScan(box){
   box.innerHTML='<p class="muted"><span class="spin"></span> 폴더 확인 중…</p>';
@@ -1946,17 +1933,14 @@ async function openScan(box){
   const lab={new:'새 파일',changed:'변경됨',done:'불러옴',excluded:'목록에서 삭제함 · 체크하면 다시 불러옴'};
   box.innerHTML=`${r.err?`<p class="muted" style="color:var(--bad)">${esc(r.err)}</p>`:`<p class="muted">${esc(r.via)}에서 ${r.files.filter(f=>!f.extra).length}개 파일 확인</p>`}
     ${r.files.length?`<div class="list">${r.files.map((f,i)=>`<label class="it"><input type="checkbox" data-i="${i}" style="width:auto;margin-top:4px" ${f.status!=='done'&&f.status!=='excluded'&&(!/\.pdf$/i.test(f.name)||S.settings.apiKey)?'checked':''}><div class="t"><div><b>${esc(f.name)}</b></div><div class="muted">${lab[f.status]}${/\.pdf$/i.test(f.name)?' · PDF(Gemini 추출)':''}${f.extra?' · URL':''}</div></div></label>`).join('')}</div>
-    <div class="row"><button class="btn pri" id="scanGo">선택 불러오기</button></div><div class="muted" id="scanLog" style="margin-top:8px"></div>`:r.err?'':`<p class="muted"><b>기출 폴더가 비어 있습니다.</b><br>아래 폴더에 .md · .json · .pdf 파일을 넣고 GitHub에 push한 뒤 다시 확인하세요.<br><code>${esc(decodeURIComponent(folderUrl().pathname))}</code>${(r.skipped||[]).length?`<br>지원하지 않는 형식이라 건너뛴 파일: ${r.skipped.map(esc).join(', ')}`:''}</p>`}`;
+    <div class="row"><button class="btn pri" id="scanGo">선택 불러오기</button></div>`:r.err?'':`<p class="muted"><b>기출 폴더가 비어 있습니다.</b><br>아래 폴더에 .md · .json · .pdf 파일을 넣고 GitHub에 push한 뒤 다시 확인하세요.<br><code>${esc(decodeURIComponent(folderUrl().pathname))}</code>${(r.skipped||[]).length?`<br>지원하지 않는 형식이라 건너뛴 파일: ${r.skipped.map(esc).join(', ')}`:''}</p>`}`;
   const go=box.querySelector('#scanGo');
   if(go)go.onclick=async()=>{
     const sel=[...box.querySelectorAll('input[data-i]:checked')].map(c=>r.files[+c.dataset.i]);
     if(!sel.length)return toast('파일을 선택하세요');
     go.disabled=true;go.innerHTML='<span class="spin"></span> 불러오는 중';
-    const lg=box.querySelector('#scanLog');const log=m=>{lg.innerHTML+=m+'<br>'};
-    const before=S.bank.length;await loadSources(sel,log);lg.innerHTML=lg.innerHTML.replace(/<span class="spin"><\/span>[^<]*<br>/g,'');
-    go.disabled=false;go.textContent='선택 불러오기';
-    let sum=box.querySelector('.scanSum');if(!sum){sum=document.createElement('div');sum.className='scanSum';box.appendChild(sum)}
-    sum.id='scanSum'+Date.now();importSummary(before,'#'+sum.id);
+    S.importLog=[];S.importSum='';const before=S.bank.length;
+    await loadSources(sel,bankLog);clearSpin();finishImport(before);
   };
 }
 
@@ -1964,13 +1948,22 @@ async function openScan(box){
 function renderSet(){
   const s=S.settings,v=$('#v-set');
   const types=['단답형','서술형','코드','SQL'];const srcs=[...new Set(S.bank.map(q=>q.source))];
-  v.innerHTML=`<div class="card"><b>내장 기출 불러오기</b>
-    <label class="f">기출 폴더 (앱 위치 기준)</label><input id="sFolder" value="${esc(s.qFolder||'questions')}" placeholder="questions">
-    <p class="muted">현재 경로: <code>${esc(decodeURIComponent(folderUrl().href))}</code><br>이 폴더에 .md · .json · .pdf 파일을 넣고 GitHub에 push하면 목록에 나타납니다. 파일명에 '출제기준'이 있으면 출제 범위로 저장합니다.</p>
-    <label class="f">추가 파일 URL (한 줄에 하나)</label><textarea id="sUrls" placeholder="https://raw.githubusercontent.com/.../2024.md" style="min-height:70px">${esc(s.extraUrls||'')}</textarea>
-    <label class="toggle ${s.autoSync!==false?'on':''}" style="margin-top:10px;display:inline-flex"><input type="checkbox" id="sAuto" class="hidden" ${s.autoSync!==false?'checked':''}>앱 시작 시 새 파일 자동 반영</label>
-    <div class="row"><button class="btn pri" id="sScan">폴더 확인 · 불러오기</button><button class="btn" id="sForget">불러온 기록 초기화</button></div>
-    <div id="scanBox" style="margin-top:8px"></div></div>
+  const rows=fileGroups();
+  v.innerHTML=`<div class="card" id="impCard"><b>기출 불러오기</b>
+    <h3 class="sec">불러온 파일 ${rows.length}개 · 총 ${S.bank.length}문항</h3>
+    <div class="list">${rows.map((f,i)=>{const solved=f.qs.filter(q=>S.progress[q.id]).length;return `<div class="it"><div class="t"><div><b>${esc(f.name)}</b> <span class="b">${esc(f.kind)}</span></div><div class="muted">${f.qs.length}문항 · 푼 문제 ${solved}${f.at?' · '+fmtD(f.at):''}</div></div><button class="btn sm" data-fv="${i}">보기</button><button class="btn sm" data-fd="${i}">삭제</button></div>`}).join('')||'<div class="muted" style="padding:8px 0">아직 불러온 파일이 없습니다. 아래에서 추가하세요.</div>'}</div>
+    <h3 class="sec">추가하기</h3>
+    <div class="row" style="margin-top:4px"><button class="btn pri" id="sPick">파일 선택</button><button class="btn" id="sScan">GitHub 폴더</button><button class="btn" id="sPaste">붙여넣기</button></div>
+    <p class="muted" style="margin:6px 0 0">.md · .txt · .json 은 바로 인식, .pdf 는 Gemini가 문제를 추출합니다(API 키 필요).</p>
+    <div id="pasteBox" class="hidden"><textarea id="pasteTa" placeholder="마크다운 기출 텍스트 붙여넣기" style="margin-top:10px;min-height:160px"></textarea><div class="row"><button class="btn pri" id="pasteGo">인식하기</button></div></div>
+    <div id="scanBox" style="margin-top:8px"></div>
+    <div id="impLog" class="muted" style="margin-top:8px">${S.importLog.join('<br>')}</div><div id="impSum">${S.importSum||''}</div>
+    <details style="margin-top:12px"><summary class="muted" style="cursor:pointer">GitHub 폴더 · URL 설정</summary>
+      <label class="f">기출 폴더 (앱 위치 기준)</label><input id="sFolder" value="${esc(s.qFolder||'questions')}" placeholder="questions">
+      <p class="muted">현재 경로: <code>${esc(decodeURIComponent(folderUrl().href))}</code><br>이 폴더에 파일을 넣고 GitHub에 push하면 'GitHub 폴더'에 나타납니다. 파일명에 '출제기준'이 있으면 출제 범위로 저장합니다.</p>
+      <label class="f">추가 파일 URL (한 줄에 하나)</label><textarea id="sUrls" placeholder="https://raw.githubusercontent.com/.../2024.md" style="min-height:70px">${esc(s.extraUrls||'')}</textarea>
+      <label class="toggle ${s.autoSync!==false?'on':''}" style="margin-top:10px;display:inline-flex"><input type="checkbox" id="sAuto" class="hidden" ${s.autoSync!==false?'checked':''}>앱 시작 시 GitHub 폴더의 새 파일 자동 반영</label>
+      <div class="row"><button class="btn sm" id="sForget">GitHub 불러온 기록 초기화</button></div></details></div>
   <div class="card"><b>Gemini API</b>
     <label class="f">API 키</label><input id="sKey" type="password" value="${esc(s.apiKey)}" placeholder="Google AI Studio에서 발급" autocomplete="off">
     <label class="f">모델</label><input id="sModel" value="${esc(s.model)}" placeholder="gemini-2.5-flash">
@@ -1982,6 +1975,9 @@ function renderSet(){
     <div class="row"><button class="btn sm" id="sGen">지금 AI 문제 생성</button></div></div>
   <div class="card"><b>출제기준 범위</b><p class="muted">AI 생성 시 범위 컨텍스트로 사용됩니다. 출제기준 PDF를 불러오면 자동으로 채워집니다.</p>
     <textarea id="sScope" style="min-height:160px">${esc(s.scope)}</textarea></div>
+  <div class="card"><b>데이터 관리</b>
+    <div class="row"><button class="btn sm" id="bExp">JSON 내보내기</button><button class="btn sm" id="bReset">진도 초기화</button><button class="btn sm" id="bDelAI">AI 문제 삭제</button><button class="btn sm" id="bDel">기출 전체 삭제</button></div>
+    <p class="muted" style="margin:8px 0 0">JSON 내보내기 파일을 다른 기기에서 '파일 선택'으로 불러오면 문제·기록을 옮길 수 있습니다.</p></div>
   <div class="card"><b>화면</b><label class="f">테마</label><select id="sTheme"><option value="auto">시스템</option><option value="light">라이트</option><option value="dark">다크</option></select></div>`;
   $('#sFocus').value=s.focus;$('#sTheme').value=s.theme;
   const sv=()=>saveSet().then(renderHeader);
@@ -1989,6 +1985,23 @@ function renderSet(){
   $('#sUrls').onchange=e=>{s.extraUrls=e.target.value;sv()};
   $('#sAuto').onchange=e=>{s.autoSync=e.target.checked;e.target.parentElement.classList.toggle('on',e.target.checked);sv()};
   $('#sScan').onclick=()=>openScan($('#scanBox'));
+  $('#sPick').onclick=()=>pickFiles();
+  $('#sPaste').onclick=()=>$('#pasteBox').classList.toggle('hidden');
+  $('#pasteGo').onclick=async()=>{const t=$('#pasteTa').value;const qs=parseMarkdown(t,'붙여넣기');const d=new Date();S.importLog=[];const before=S.bank.length;
+    const n=putQuestions(qs,'paste:'+d.getTime(),false,`붙여넣기 ${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`);await saveBank();
+    bankLog(`${qs.length?'✓':'✕'} 붙여넣기: ${qs.length}문항 인식, ${n}문항 추가${qs.length?'':' — 문제 번호(### 문제 1 / **문제 1.** 등)를 찾지 못했습니다'}`);finishImport(before)};
+  v.querySelectorAll('[data-fv]').forEach(b=>b.onclick=()=>{bankFile=rows[+b.dataset.fv].k;show('bank')});
+  v.querySelectorAll('[data-fd]').forEach(b=>b.onclick=async()=>{
+    const f=rows[+b.dataset.fd];
+    if(!confirm(`'${f.name}'에서 불러온 ${f.qs.length}문항을 삭제할까요?\n(풀이 기록은 남아 있어 다시 불러오면 이어집니다)`))return;
+    const ids=new Set(f.qs.map(q=>q.id));S.bank=S.bank.filter(q=>!ids.has(q.id));
+    if(f.k){delete S.files[f.k];if(/^https?:/.test(f.k)){S.settings.excluded[f.k]=true;delete S.settings.loaded[f.k];await saveSet()}await saveFiles()}
+    if(S.cur&&ids.has(S.cur.id))S.cur=null;if(bankFile===f.k)bankFile=null;S.importLog=[];S.importSum='';
+    await saveBank();toast(`${f.qs.length}문항 삭제`);renderSet();renderHeader()});
+  $('#bExp').onclick=()=>downloadText('jcg_bank.json',JSON.stringify({questions:S.bank,ai:S.ai,progress:S.progress},null,1));
+  $('#bReset').onclick=async()=>{if(!confirm('풀이 기록(오답노트 포함)을 모두 지울까요?'))return;S.progress={};await saveProg();S.cur=null;S.session=null;toast('초기화 완료');renderSet();renderHeader()};
+  $('#bDelAI').onclick=async()=>{if(!confirm('AI 생성 문제를 모두 삭제할까요?'))return;S.ai=[];await saveAI();toast('AI 문제 삭제');renderHeader()};
+  $('#bDel').onclick=async()=>{if(!confirm('기출 문제은행을 모두 삭제할까요?'))return;S.bank=[];Object.keys(S.files).forEach(k=>{if(/^https?:/.test(k)){S.settings.excluded[k]=true;delete S.settings.loaded[k]}});S.files={};await saveFiles();await saveSet();bankFile=null;await saveBank();S.cur=null;S.session=null;S.importLog=[];S.importSum='';renderSet();renderHeader()};
   $('#sForget').onclick=()=>{s.loaded={};sv();toast('다음 확인 때 모든 파일이 새 파일로 표시됩니다')};
   $('#sKey').onchange=e=>{s.apiKey=e.target.value.trim();sv()};
   $('#sModel').onchange=e=>{s.model=e.target.value.trim()||'gemini-2.5-flash';sv()};
@@ -2015,7 +2028,7 @@ window.addEventListener('popstate',()=>{});
 window.onAndroidBack=()=>{if(S.view!=='solve'){show('solve');return true}return false};
 
 (async()=>{await load();applyTheme();show('solve');autoSync().catch(()=>{})})();
-if('serviceWorker' in navigator&&location.hostname!=='appassets.androidplatform.net'&&(location.protocol==='https:'||location.hostname==='localhost'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator&&location.hostname!=='appassets.androidplatform.net'&&(location.protocol==='https:'||location.hostname==='localhost')){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!window.__reloaded){window.__reloaded=true;location.reload()}})}
 window.__jcg={parseMarkdown,autoGrade,detectType,normalizeJson,S};
 </script>
 </body>
