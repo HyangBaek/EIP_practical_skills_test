@@ -1339,6 +1339,7 @@ async function load(){
   S.progress = (await DB.get('progress'))||{};
   S.files = (await DB.get('files'))||{};
   S.settings = {...DEFAULT_SETTINGS,...((await DB.get('settings'))||{})};
+  S.bank.forEach(q=>{if(!q.aiExp&&/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT)\b/i.test(q.answer||''))q.keywords=[]});
   if(!S.settings.model||S.settings.model==='gemini-2.5-flash'){S.settings.model=DEFAULT_MODEL;await saveSet()}
   if(!S.settings.loaded)S.settings.loaded={};if(!S.settings.excluded)S.settings.excluded={};
 }
@@ -1465,7 +1466,7 @@ function finishQ(q){
   q.id=q.id||(q.origin==='ai'?'ai_':'q_')+hash((q.source||'')+'|'+(q.no||'')+'|'+q.body.slice(0,120));
   return q;
 }
-function autoKw(ans){const a=stripMd(ans);if(!a)return [];if(a.length<=80)return splitKw(a.replace(/[①-⑳]|\(\d+\)|^\s*\d+[\.\)]/gm,','));return [...String(ans).matchAll(/\*\*(.+?)\*\*/g)].map(m=>m[1]).slice(0,6)}
+function autoKw(ans){const a=stripMd(ans);if(!a)return [];if(/```|\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT)\b|[;{}=]/i.test(ans))return [];if(a.length<=80)return splitKw(a.replace(/[①-⑳]|\(\d+\)|^\s*\d+[\.\)]/gm,','));return [...String(ans).matchAll(/\*\*(.+?)\*\*/g)].map(m=>m[1]).slice(0,6)}
 function normalizeJson(j,origin){
   const arr=Array.isArray(j)?j:(j.questions||j.items||[]);
   return arr.filter(x=>x&&(x.body||x.question)).map(x=>finishQ({
@@ -1504,10 +1505,39 @@ function autoGrade(q,user){
 }
 
 /* ================= Gemini ================= */
-async function gemini(parts,opts={},retried=false){
-  const {json=true,temperature=0.7,maxTokens=16384}=opts;
+/* 모델 자동 전환: 선호 모델 → (한도 초과 시) 하위 모델로 내려갔다가, 선호 모델 대기 시간이 끝나면 자동으로 다시 올라감 */
+const preferredModel=()=>((S.settings.model||'').trim()||DEFAULT_MODEL);
+function rankModel(n){ // 낮을수록 먼저: 최신 버전 우선, 같은 버전은 flash → flash-lite → 그 외
+  const v=parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/)||[])[1]||0);
+  const tier=/lite/.test(n)?2:/flash/.test(n)?1:/pro/.test(n)?4:3;
+  return -v*10+tier+(/preview|exp/.test(n)?0.5:0);
+}
+async function modelChain(needList){
+  const pref=preferredModel();
+  if(S.settings.autoFallback===false)return [pref];
+  if(needList&&S.settings.apiKey&&(!S.settings.modelList||Date.now()-(S.settings.modelListAt||0)>3*864e5)&&Date.now()-(S.modelListTry||0)>36e5){
+    S.modelListTry=Date.now();try{S.settings.modelList=await listModels();S.settings.modelListAt=Date.now();await saveSet()}catch(e){}
+  }
+  const extra=(S.settings.modelList||[]).filter(n=>n!==pref&&/flash/.test(n)).sort((a,b)=>rankModel(a)-rankModel(b)).slice(0,4);
+  return [pref,...extra.filter(n=>n!==pref)];
+}
+async function gemini(parts,opts={}){
   const key=S.settings.apiKey.trim();if(!key)throw new Error('설정에서 Gemini API 키를 입력하세요');
-  const model=(S.settings.model||'').trim()||DEFAULT_MODEL;
+  const pref=preferredModel();let chain=await modelChain(false),fetched=false,lastErr=null;
+  for(let k=0;k<chain.length||(!fetched&&S.settings.autoFallback!==false);k++){
+    if(k>=chain.length){chain=await modelChain(true);fetched=true;if(k>=chain.length)break}
+    const model=chain[k];
+    if(blockedUntil(model)>Date.now())continue;
+    try{
+      const out=await callModel(model,parts,opts,key);
+      if(S.activeModel===model)renderHeader();else{S.activeModel=model;if(model!==pref)toast(`${pref} 한도 초과 → ${model}(으)로 자동 전환`,3500);else if(S.wasFallback)toast(`${pref}(으)로 다시 돌아왔습니다`,3000);S.wasFallback=model!==pref;renderHeader()}
+      return out;
+    }catch(e){if(e.skip){lastErr=e;continue}throw e}
+  }
+  throw new Error(quotaMsgAll(chain,lastErr));
+}
+async function callModel(model,parts,opts,key){
+  const {json=true,temperature=0.7,maxTokens=16384}=opts;
   const url=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
   const gc={maxOutputTokens:maxTokens};
   if(!/^gemini-[3-9]/.test(model))gc.temperature=temperature; // Gemini 3 이상은 기본 temperature 권장
@@ -1516,11 +1546,19 @@ async function gemini(parts,opts={},retried=false){
   const j=await r.json().catch(()=>({}));
   if(!r.ok){
     const msg=(j.error&&j.error.message)||('HTTP '+r.status);
-    // 종료된 모델: 오류 문구가 권하는 모델(models/xxx)로 자동 전환 후 1회 재시도
-    const sug=msg.match(/use\s+models\/([\w.\-]+)/i);
-    if(!retried&&(r.status===404||/no longer available|not found|deprecated|not supported/i.test(msg))){
-      const next=sug?sug[1]:(model!==DEFAULT_MODEL?DEFAULT_MODEL:null);
-      if(next&&next!==model){S.settings.model=next;await saveSet();toast(`모델을 ${next}(으)로 바꿔 다시 시도합니다`,3500);if(S.view==='set'){const m=$('#sModel');if(m)m.value=next}return gemini(parts,opts,true)}
+    const block=async ms=>{S.settings.aiBlock=Object.assign({},S.settings.aiBlock,{[model]:Date.now()+ms});await saveSet();renderHeader()};
+    if(r.status===429||/quota|RESOURCE_EXHAUSTED|rate.?limit/i.test(msg)){
+      // 한도 초과(분당이든 하루든): 안내된 대기시간 동안 이 모델만 쉬게 하고 다음 모델로
+      const m=msg.match(/retry in\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i);
+      await block(Math.max(m?((+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0))*1000:60000,15000));
+      const e=new Error(msg);e.skip=true;throw e;
+    }
+    if(r.status===404||/no longer available|not found|deprecated|not supported/i.test(msg)){
+      // 종료된 모델: 권장 모델이 있으면 선호 모델로 교체, 이 모델은 하루 동안 건너뜀
+      const sug=msg.match(/use\s+models\/([\w.\-]+)/i);
+      await block(864e5);
+      if(sug&&model===preferredModel()&&sug[1]!==model){S.settings.model=sug[1];await saveSet();toast(`기본 모델을 ${sug[1]}(으)로 바꿨습니다`,3500);const mi=$('#sModel');if(mi)mi.value=sug[1]}
+      const e=new Error(msg);e.skip=true;throw e;
     }
     throw new Error(msg);
   }
@@ -1530,6 +1568,15 @@ async function gemini(parts,opts={},retried=false){
   if(!json)return t;
   const s=t.replace(/^\s*```(?:json)?/i,'').replace(/```\s*$/,'').trim();
   try{return JSON.parse(s)}catch(e){const m=s.match(/[\[{][\s\S]*[\]}]/);if(m)return JSON.parse(m[0]);throw new Error('JSON 파싱 실패')}
+}
+/* 한도는 모델마다 따로 계산되므로 대기 시간도 모델별로 기억 */
+function blockedUntil(model){return ((S.settings.aiBlock||{})[model||preferredModel()])||0}
+const fmtWait=ms=>{const h=Math.floor(ms/3600000),m=Math.max(1,Math.ceil(ms%3600000/60000));return `${h?h+'시간 ':''}${m}분`};
+function quotaMsg(model){const ms=blockedUntil(model)-Date.now();return ms>0?`${model} 한도 초과 · 약 ${fmtWait(ms)} 뒤 사용 가능`:''}
+function quotaMsgAll(chain,lastErr){
+  const waits=chain.map(m=>blockedUntil(m)).filter(t=>t>Date.now());
+  if(!waits.length)return lastErr?lastErr.message:'사용 가능한 Gemini 모델이 없습니다';
+  return `사용할 수 있는 Gemini 모델의 무료 한도를 모두 썼습니다. 가장 빠른 모델이 약 ${fmtWait(Math.min(...waits)-Date.now())} 뒤 다시 열립니다. (기출 풀이·자동 채점은 그대로 됩니다)`;
 }
 async function listModels(){
   const key=S.settings.apiKey.trim();if(!key)throw new Error('API 키를 먼저 입력하세요');
@@ -1621,7 +1668,6 @@ async function nextQuestion(){
   if(!p.length&&S.skip.size){S.skip.clear();p=poolFor(ss.target)}
   if(p.length){
     S.cur=ss.order==='random'&&ss.target!=='ai'?p[Math.floor(Math.random()*p.length)]:p[0];renderSolve();
-    if(ss.target==='ai'&&p.length<=1&&S.settings.apiKey)generateBatch().catch(e=>toast('백그라운드 생성 실패: '+e.message,4000));
     return;
   }
   if(ss.target==='new'){
@@ -1693,7 +1739,7 @@ function renderHeader(){
   const acc=all.length?Math.round(all.filter(p=>p.status==='correct').length/all.length*100):null;
   const st=stage();
   $('#stageTxt').innerHTML=!S.bank.length?'기출을 먼저 불러오세요':st===1?`1단계 기출 풀이 <b>${done}/${tot}</b>`:`2단계 AI 응용 · 남은 ${pendingAI().length}${S.generating?' · <span class="spin"></span> 생성 중':''}`;
-  $('#accTxt').textContent=acc===null?'':`정답률 ${acc}% (${all.length}문항)`;
+  $('#accTxt').textContent=(acc===null?'':`정답률 ${acc}% (${all.length}문항)`)+(S.activeModel&&S.activeModel!==preferredModel()&&blockedUntil()>Date.now()?` · AI: ${S.activeModel.replace('gemini-','')} (자동 전환)`:blockedUntil()>Date.now()?' · AI 한도 대기 중':'');
   $('#barI').style.width=(tot?done/tot*100:0)+'%';
   $('#quickBtn').classList.toggle('on',S.settings.quick);
 }
@@ -1713,8 +1759,9 @@ function renderSolve(err){
   const ss=S.session;
   const bar=S.reviewBack?`<div class="sesbar"><span>${S.reviewBack==='wrong'?'오답노트에서 다시 풀기':'문제은행에서 선택한 문제'}</span><button class="btn sm" id="sesBack">돌아가기</button></div>`
     :ss?`<div class="sesbar"><span>${esc(TARGETS[ss.target])}${S.settings.types.length?' · '+esc(S.settings.types.join('/')):''}${ss.order==='random'?' · 랜덤':''} · <b>${ss.done+1}${ss.count?'/'+ss.count:''}</b>번째</span><button class="btn sm" id="sesEnd">그만 풀기</button></div>`:'';
-  const rnote=q.summary?`<div class="muted" id="restoreNote" style="margin-top:6px">${S.settings.apiKey?'<button class="btn sm" id="restoreBtn">AI로 문제 복원</button> 요약·정답을 바탕으로 시험지 형태의 문제를 만들어 저장합니다':'요약 문항입니다. 설정에 Gemini API 키를 넣으면 시험지 형태로 복원할 수 있습니다.'}</div>`
-    :q.restored?`<div class="muted" style="margin-top:6px">AI가 요약을 바탕으로 복원한 문제입니다. 실제 원문과 다를 수 있습니다.</div>`:'';
+  const donor=q.summary&&!q.restored?findDonor(q,true):null;
+  const rnote=q.summary?`<div class="muted" style="margin-top:6px">요약 문항입니다.${donor?'':' 정답 확인 후 \'AI 해설 생성\'을 누르면 해설과 함께 문제 본문도 만들어 저장합니다(요청 1회).'}</div>${donor?`<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">같은 문제의 저장된 본문 보기 (${esc(donor.source)} ${esc(donor.no)}번)</summary><div class="md">${md(donor.body)}</div></details>`:''}`
+    :q.restored?`<div class="muted" style="margin-top:6px">AI가 요약을 바탕으로 만든 문제입니다. 실제 원문과 다를 수 있습니다.</div>`:'';
   v.innerHTML=`<div class="card">${bar}${qHead(q)}<div class="md" id="qBody">${md(q.body)}</div>${rnote}
   ${quick?`<div class="res mid"><div class="verdict v-mid">정답</div><div class="md">${md(q.answer||'_정답 데이터 없음_')}</div><h3 class="sec">키워드</h3>${kwHtml(q)}</div>
     <div class="row"><button class="btn" id="qConf">헷갈림 → 오답노트</button><button class="btn pri" id="qNext">다음 ▶</button></div>`
@@ -1724,8 +1771,6 @@ function renderSolve(err){
   </div>`;
   hl(v);
   const se=$('#sesEnd');if(se)se.onclick=()=>endSession();
-  const rb=$('#restoreBtn');if(rb)rb.onclick=()=>autoRestoreCur(true);
-  if(q.summary&&!q.restored&&S.settings.autoRestore!==false&&S.settings.apiKey&&!S.settings.quick)autoRestoreCur();
   const sb=$('#sesBack');if(sb)sb.onclick=()=>afterAnswer();
   if(quick){
     if(!S.progress[q.id]||S.progress[q.id].status!=='wrong')mark(q,'quick');
@@ -1754,7 +1799,7 @@ function submit(user,reveal=false){
     <h3 class="sec">정답</h3><div class="md">${md(q.answer||'_정답 데이터 없음 — AI 해설로 확인하세요_')}</div>
     <h3 class="sec">키워드</h3>${kwHtml(q)}
     ${q.restored&&q.origBody?`<h3 class="sec">원래 요약</h3><div class="muted">${esc(stripMd(q.origBody).replace(/요약 문항:.*$/,'').trim())}</div>`:''}
-    <h3 class="sec">해설</h3><div class="md" id="expl">${q.explanation?md(q.explanation):'<span class="muted">해설이 없습니다.</span>'}</div>
+    <h3 class="sec">해설</h3><div class="md" id="expl">${q.explanation?md(q.explanation):(()=>{const d=findDonor(q,false);return d?`<div class="muted">같은 문제의 저장된 해설 (${esc(d.source)} ${esc(d.no)}번)</div>${md(d.explanation)}`:'<span class="muted">저장된 해설이 없습니다. 필요할 때만 아래 \'AI 해설 생성\'을 누르세요(요청 1회).</span>'})()}</div>
     <div id="aiBox"></div>
     <div class="row">${needAI?'<button class="btn sm" id="aiGrade">AI 채점</button>':''}<button class="btn sm" id="aiExp">${q.explanation?'AI 해설 다시':'AI 해설 생성'}</button></div>
     <div class="row"><button class="btn" id="mBad">틀림</button><button class="btn" id="mOk">맞음</button><button class="btn pri" id="mNext">다음 ▶</button></div>
@@ -1776,6 +1821,11 @@ JSON으로만: {"verdict":"정답|부분정답|오답","score":0~100,"feedback":
       ag.remove();
     }catch(e){toast(e.message,4000);ag.disabled=false;ag.textContent='AI 채점'}};
   $('#aiExp').onclick=async e=>{const b=e.target;b.disabled=true;b.innerHTML='<span class="spin"></span> 해설 생성 중';
+    if(q.summary&&!q.restored){ // 요약 문항: 요청 1회로 본문+해설을 함께 만들어 저장
+      try{const n=await restoreBatch([q]);if(!n)throw new Error('생성 결과가 비어 있습니다');
+        const qb=$('#qBody');if(qb){qb.innerHTML=md(q.body);hl(qb)}$('#expl').innerHTML=md(q.explanation||'');hl($('#expl'));b.textContent='AI 해설 다시';toast('문제 본문과 해설을 저장했습니다')}
+      catch(err){toast(err.message,6000);b.textContent='AI 해설 생성'}
+      b.disabled=false;return}
     try{const j=await gemini([{text:`정보처리기사 실기 강사로서 아래 문제의 정답과 상세 해설을 작성하라.
 - 코드 문제: 변수/배열/출력 변화를 단계별 표로 추적
 - SQL 문제: 절 실행 순서대로 중간 결과를 보여줌
@@ -1783,7 +1833,6 @@ JSON으로만: {"verdict":"정답|부분정답|오답","score":0~100,"feedback":
 [문제]\n${q.body}\n[기존 정답]\n${q.answer||'(없음, 직접 풀어서 제시)'}
 JSON으로만: {"answer":"정답(기존 정답이 있으면 그대로)","keywords":["2~5개"],"explanation":"마크다운 해설"}`}],{temperature:0.3,maxTokens:12000});
       if(!q.answer&&j.answer)q.answer=j.answer;if(j.keywords&&j.keywords.length&&(!q.keywords||!q.keywords.length))q.keywords=j.keywords;q.explanation=j.explanation||q.explanation;q.aiExp=true;await saveQ(q);
-      if(q.summary&&!q.restored&&S.settings.apiKey){restoreBatch([q]).then(n=>{if(n){const qb=$('#qBody');if(qb&&S.cur===q){qb.innerHTML=md(q.body);hl(qb);const rn=$('#restoreNote');if(rn)rn.textContent='AI가 요약을 바탕으로 복원한 문제입니다. 실제 원문과 다를 수 있습니다.';$('#expl').innerHTML=md(q.explanation);hl($('#expl'))}toast('문제 본문도 복원해 저장했습니다')}}).catch(()=>{})}
       $('#expl').innerHTML=md(q.explanation);hl($('#expl'));b.textContent='AI 해설 다시';
     }catch(err){toast(err.message,4000);b.textContent='AI 해설 생성'}b.disabled=false};
   r.scrollIntoView({behavior:'smooth',block:'start'});
@@ -1825,10 +1874,12 @@ function renderBank(){
 function goImport(){show('set');const c=$('#impCard');if(c)c.scrollIntoView({block:'start'})}
 
 function pickFiles(){const f=$('#fileIn');f.value='';f.click()}
-async function importOne(file,log,{tag='',replace=false,askProgress=true}={}){
+async function importOne(file,log,{tag='',replace=false,askProgress=true,noAI=false}={}){
   const name=file.name;
   if(!SRC_EXT.test(name)&&file.type!=='application/pdf'){log(`✕ ${esc(name)}: 지원하지 않는 형식 (.md · .txt · .json · .pdf 만 가능)`);return false}
   if(/\.pdf$/i.test(name)||file.type==='application/pdf'){
+    if(noAI){log(`– ${esc(name)}: PDF는 자동 반영에서 제외 (설정에서 직접 불러오면 Gemini로 추출)`);return false}
+    if(!confirm(`'${name}'를 Gemini로 분석합니다. 요청 1회를 사용합니다. 진행할까요?`)){log(`– ${esc(name)}: 취소`);return false}
     if(file.size>19*1024*1024){log(`✕ ${esc(name)}: 19MB 초과`);return false}
     const isScope=/출제기준|기준|scope/i.test(name);
     log(`<span class="spin"></span> ${esc(name)}: Gemini ${isScope?'출제기준 요약':'문제 추출'} 중… (1~2분)`);
@@ -1857,7 +1908,7 @@ ${QSCHEMA}`}],{temperature:0.1,maxTokens:65536});
   else{
     qs=parseMarkdown(text,name);
     const weak=!qs.length||qs.filter(q=>!q.answer).length>qs.length*0.5;
-    if(weak&&S.settings.apiKey){
+    if(weak&&S.settings.apiKey&&!noAI&&confirm(`'${name}'의 형식을 자동으로 인식하지 못했습니다. Gemini로 분석할까요? (요청 ${splitChunks(text).length}회 사용)`)){
       log(`<span class="spin"></span> ${esc(name)}: 형식 자동 인식 ${qs.length}문항(정답 ${qs.filter(q=>q.answer).length}) → Gemini로 다시 분석 중…`);
       try{const g=await geminiExtractText(text,name,log);if(g.filter(q=>q.answer).length>qs.filter(q=>q.answer).length)qs=g}
       catch(err){log(`✕ ${esc(name)}: Gemini 분석 실패 — ${esc(err.message)}`)}
@@ -1928,12 +1979,10 @@ ${JSON.stringify(items)}`}],{temperature:0.3,maxTokens:60000});
   return n;
 }
 const restoring=new Set();
-async function autoRestoreCur(force=false){
-  const q=S.cur;if(!q||!q.summary||q.restored||!S.settings.apiKey||(!force&&S.settings.autoRestore===false)||restoring.has(q.id))return;
-  restoring.add(q.id);const box=$('#restoreNote');if(box)box.innerHTML='<span class="spin"></span> 요약 문항이라 AI가 시험지 형태로 문제를 복원하는 중…';
-  try{const n=await restoreBatch([q]);if(n&&S.cur===q&&!$('#res .res')){renderSolve()}else if(box)box.textContent=n?'복원 완료 — 다음에 이 문제를 열면 복원된 문제가 보입니다':'복원하지 못했습니다'}
-  catch(e){if(box)box.innerHTML=`복원 실패: ${esc(e.message)}`}
-  finally{restoring.delete(q.id)}
+/* 이미 저장된 같은 문제(다른 회차·같은 정답)의 해설/복원 본문을 찾아 재사용 — 새 요청 없음 */
+function findDonor(q,needBody){
+  const a=norm(q.answer||'');if(a.length<2)return null;
+  return S.bank.concat(S.ai).find(o=>o.id!==q.id&&o.type===q.type&&norm(o.answer||'')===a&&(needBody?(o.restored||!o.summary):!!o.explanation))||null;
 }
 
 function putQuestions(qs,tag,replace,name){
@@ -2010,7 +2059,7 @@ async function loadSources(files,log){
       const r=await fetch(f.url,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);
       const blob=await r.blob();const isPdf=/\.pdf$/i.test(f.name);
       const file=new File([blob],f.name,{type:isPdf?'application/pdf':(blob.type||'text/plain')});
-      const done=await importOne(file,log,{tag:f.url,replace:f.status==='changed',askProgress:false});
+      const done=await importOne(file,log,{tag:f.url,replace:f.status==='changed',askProgress:false,noAI:!!f.auto});
       if(done){S.settings.loaded[f.url]=f.ver||'done';delete S.settings.excluded[f.url];ok++}
     }catch(err){log(`✕ ${esc(f.name)}: ${esc(err.message)}`)}
   }
@@ -2019,10 +2068,10 @@ async function loadSources(files,log){
 async function autoSync(){
   if(S.settings.autoSync===false)return;
   const r=await scanSources();
-  const todo=r.files.filter(f=>f.status!=='done'&&f.status!=='excluded'&&(!/\.pdf$/i.test(f.name)||S.settings.apiKey)&&!(/\.pdf$/i.test(f.name)&&f.status==='changed'));
+  const todo=r.files.filter(f=>f.status!=='done'&&f.status!=='excluded'&&!/\.pdf$/i.test(f.name));
   if(!todo.length)return;
   const before=S.bank.length;const msgs=[];
-  await loadSources(todo,m=>msgs.push(m));
+  todo.forEach(f=>f.auto=true);await loadSources(todo,m=>msgs.push(m));
   const n=S.bank.length-before;
   if(n>0)toast(`내장 기출 ${todo.length}개 파일 반영 · ${n}문항 추가`,3500);
   renderHeader();if(S.view==='solve'){if(!S.session)renderStart();else if(!S.cur)nextQuestion()}if(S.view==='bank')renderBank();if(S.view==='set')renderSet();
@@ -2068,13 +2117,9 @@ function renderSet(){
     <label class="f">API 키</label><input id="sKey" type="password" value="${esc(s.apiKey)}" placeholder="Google AI Studio에서 발급" autocomplete="off">
     <label class="f">모델</label><input id="sModel" value="${esc(s.model)}" placeholder="${DEFAULT_MODEL}" list="modelList"><datalist id="modelList"></datalist>
     <p class="muted">키는 이 기기에만 저장됩니다. 모델명은 AI Studio에서 사용 가능한 이름으로 바꿀 수 있습니다.</p>
+    <label class="toggle ${s.autoFallback!==false?'on':''}" style="margin-top:10px;display:inline-flex"><input type="checkbox" id="sFallback" class="hidden" ${s.autoFallback!==false?'checked':''}>한도 초과 시 하위 모델로 자동 전환 · 풀리면 자동 복귀</label>
+    <div class="muted" id="chainBox" style="margin-top:6px"></div>
     <div class="row"><button class="btn sm" id="sTest">연결 테스트</button><button class="btn sm" id="sModels">사용 가능한 모델 보기</button></div><div id="modelBox" class="kw" style="margin-top:8px"></div></div>
-  <div class="card"><b>요약 문항 AI 복원</b>
-    <p class="muted">문제 원문 없이 요약·정답만 있는 문항을 AI가 시험지 형태(코드·표·보기 포함)로 복원해 저장합니다. 정답은 바꾸지 않습니다. 복원된 문제는 원문과 다를 수 있습니다.</p>
-    <p class="muted" style="margin:0">요약 문항 <b>${S.bank.filter(q=>q.summary).length}</b>개 · 복원됨 <b>${S.bank.filter(q=>q.restored).length}</b>개</p>
-    <label class="toggle ${s.autoRestore!==false?'on':''}" style="margin-top:10px;display:inline-flex"><input type="checkbox" id="sAutoRes" class="hidden" ${s.autoRestore!==false?'checked':''}>풀 때 자동 복원 (문항당 1회)</label>
-    <div class="row"><button class="btn sm" id="sResAll">남은 요약 문항 일괄 복원</button><button class="btn sm hidden" id="sResStop">중지</button></div>
-    <div id="resProg" class="muted" style="margin-top:6px"></div></div>
   <div class="card"><b>AI 출제 (2단계)</b><p class="muted">유형·회차·순서·문항 수는 풀기 탭 시작 화면에서 고릅니다.</p>
     <label class="f">2단계 AI 출제 방향</label><select id="sFocus"><option value="auto">기출 유형 비율대로</option><option value="weak">약점(오답) 위주</option><option value="단답형">단답형 집중</option><option value="코드">코드(C/Java/Python) 집중</option><option value="SQL">SQL 집중</option><option value="서술형">서술형 집중</option></select>
     <label class="f">한 번에 생성할 문제 수</label><input id="sBatch" type="number" min="1" max="10" value="${+s.batch||3}">
@@ -2111,7 +2156,10 @@ function renderSet(){
   $('#sForget').onclick=()=>{s.loaded={};sv();toast('다음 확인 때 모든 파일이 새 파일로 표시됩니다')};
   $('#sKey').onchange=e=>{s.apiKey=e.target.value.trim();sv()};
   $('#sModel').onchange=e=>{s.model=e.target.value.trim()||DEFAULT_MODEL;sv()};
-  $('#sModels').onclick=async e=>{const b=e.target;b.disabled=true;try{const ms=await listModels();$('#modelList').innerHTML=ms.map(m=>`<option value="${esc(m)}">`).join('');
+  $('#sFallback').onchange=e=>{s.autoFallback=e.target.checked;e.target.parentElement.classList.toggle('on',e.target.checked);sv();showChain()};
+  const showChain=async()=>{const ch=await modelChain(false);$('#chainBox').innerHTML=s.autoFallback===false?'':'전환 순서: '+ch.map(m=>{const w=blockedUntil(m)-Date.now();return `<b>${esc(m)}</b>${w>0?` <span style="color:var(--mid)">(대기 ${fmtWait(w)})</span>`:''}`}).join(' → ')+(ch.length<2?' <span>(다른 모델 목록은 처음 한도 초과 때 자동으로 불러옵니다)</span>':'')};
+  showChain();
+  $('#sModels').onclick=async e=>{const b=e.target;b.disabled=true;try{const ms=await listModels();s.modelList=ms;s.modelListAt=Date.now();sv();showChain();$('#modelList').innerHTML=ms.map(m=>`<option value="${esc(m)}">`).join('');
     $('#modelBox').innerHTML=ms.length?ms.map(m=>`<span data-m="${esc(m)}" style="cursor:pointer;${m===s.model?'background:var(--pri);color:#fff':''}">${esc(m)}</span>`).join(''):'<span>사용 가능한 모델이 없습니다</span>';
     $('#modelBox').querySelectorAll('[data-m]').forEach(x=>x.onclick=()=>{s.model=x.dataset.m;$('#sModel').value=s.model;sv();toast('모델: '+s.model);$('#sModels').click()})}catch(err){toast('실패: '+err.message,5000)}b.disabled=false};
   $('#sFocus').onchange=e=>{s.focus=e.target.value;sv()};
@@ -2119,17 +2167,6 @@ function renderSet(){
   $('#sScope').onchange=e=>{s.scope=e.target.value;sv()};
   $('#sTheme').onchange=e=>{s.theme=e.target.value;applyTheme();sv()};
   $('#sTest').onclick=async e=>{e.target.disabled=true;try{const t=await gemini([{text:'"OK"라고만 답해'}],{json:false,temperature:0,maxTokens:256});toast('연결 성공: '+t.trim().slice(0,30))}catch(err){toast('실패: '+err.message,5000)}e.target.disabled=false};
-  $('#sAutoRes').onchange=e=>{s.autoRestore=e.target.checked;e.target.parentElement.classList.toggle('on',e.target.checked);sv()};
-  $('#sResAll').onclick=async e=>{
-    const todo=S.bank.filter(q=>q.summary&&!q.restored);if(!todo.length)return toast('복원할 요약 문항이 없습니다');
-    if(!confirm(`요약 문항 ${todo.length}개를 5개씩 묶어 복원합니다. Gemini 요청 약 ${Math.ceil(todo.length/5)}회가 필요합니다. 진행할까요?`))return;
-    const b=e.target,stop=$('#sResStop'),pg=$('#resProg');let stopped=false,ok=0,fail=0;b.disabled=true;stop.classList.remove('hidden');stop.onclick=()=>{stopped=true;stop.textContent='중지 중…'};
-    for(let i=0;i<todo.length&&!stopped;i+=5){
-      pg.innerHTML=`<span class="spin"></span> ${i}/${todo.length} 처리 중 (복원 ${ok} · 실패 ${fail})`;
-      try{const chunk=todo.slice(i,i+5);const n=await restoreBatch(chunk);ok+=n;fail+=chunk.length-n}catch(err){fail+=Math.min(5,todo.length-i);pg.innerHTML=`오류: ${esc(err.message)}`;if(/API 키|quota|429|exhausted/i.test(err.message))break}
-    }
-    pg.textContent=`${stopped?'중지됨':'완료'} — 복원 ${ok}개, 실패 ${fail}개. 복원 결과는 이 기기에 저장됐습니다.`;b.disabled=false;stop.classList.add('hidden');stop.textContent='중지';renderHeader();
-  };
   $('#sGen').onclick=async e=>{e.target.disabled=true;e.target.innerHTML='<span class="spin"></span> 생성 중';try{await generateBatch()}catch(err){toast('실패: '+err.message,5000)}e.target.disabled=false;e.target.textContent='지금 AI 문제 생성'};
 }
 function applyTheme(){const t=S.settings.theme;if(t==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',t)}
