@@ -1339,7 +1339,8 @@ async function load(){
   S.progress = (await DB.get('progress'))||{};
   S.files = (await DB.get('files'))||{};
   S.settings = {...DEFAULT_SETTINGS,...((await DB.get('settings'))||{})};
-  {let ch=0;const fix=q=>{const k0=JSON.stringify(q.keywords||[]);q.keywords=[...new Set((q.keywords||[]).map(cleanKw).filter(Boolean))];if(JSON.stringify(q.keywords)!==k0)ch++;
+  {let ch=0;const fix=q=>{const k0=JSON.stringify(q.keywords||[]);if(!q.aiExp&&!q.restored&&q.origin!=='ai'&&q.summary)q.keywords=autoKw(q.answer);q.keywords=expandKw(q.keywords);if(JSON.stringify(q.keywords)!==k0)ch++;
+      if(q.aiExp||q.restored||q.origin==='ai'){const e0=q.explanation;q.explanation=sanitizeExpl(q.explanation);if(q.explanation!==e0)ch++}
       if(q.restored||q.origin==='ai'){const b0=q.body;q.body=sanitizeAIBody(q.body,q.answer);if(q.body!==b0)ch++;if(q.prev&&q.prev.body){q.prev.body=sanitizeAIBody(q.prev.body,q.prev.answer||q.answer);q.prevBody=q.prev.body}}};
     S.bank.forEach(fix);S.ai.forEach(fix);if(ch){await saveBank();await saveAI()}}
   if(migrateCollection())await saveAI();
@@ -1355,7 +1356,25 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 function hash(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h+s.charCodeAt(i))|0;return (h>>>0).toString(36)}
 let toastT;function toast(m,ms=2600){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),ms)}
 marked.use({gfm:true,breaks:true,renderer:{html(t){return esc(typeof t==='string'?t:(t.text||t.raw||''))}}});
-function md(s){return marked.parse(String(s||''))}
+/* AI가 쓴 LaTeX 기호($\rightarrow$ 등)를 일반 문자로 바꿔 표시 (코드 블록·인라인 코드는 그대로) */
+const TEX={rightarrow:'→',to:'→',longrightarrow:'⟶',leftarrow:'←',gets:'←',Rightarrow:'⇒',Leftarrow:'⇐',leftrightarrow:'↔',Leftrightarrow:'⇔',implies:'⇒',iff:'⇔',uparrow:'↑',downarrow:'↓',mapsto:'↦',
+  times:'×',div:'÷',cdot:'·',pm:'±',le:'≤',leq:'≤',ge:'≥',geq:'≥',neq:'≠',ne:'≠',approx:'≈',equiv:'≡',sim:'∼',
+  sigma:'σ',Sigma:'Σ',pi:'π',Pi:'Π',bowtie:'⋈',Join:'⋈',cup:'∪',cap:'∩',in:'∈',notin:'∉',subset:'⊂',subseteq:'⊆',supset:'⊃',supseteq:'⊇',setminus:'∖',
+  infty:'∞',ldots:'…',cdots:'⋯',dots:'…',alpha:'α',beta:'β',gamma:'γ',delta:'δ',Delta:'Δ',lambda:'λ',mu:'μ',theta:'θ',omega:'ω',
+  neg:'¬',lnot:'¬',land:'∧',wedge:'∧',lor:'∨',vee:'∨',oplus:'⊕',forall:'∀',exists:'∃',emptyset:'∅',varnothing:'∅',sum:'Σ',prod:'Π',circ:'∘',bullet:'•',
+  quad:' ',qquad:'  ',left:'',right:'',displaystyle:'',',':' ',';':' ','!':'',' ':' ','%':'%','_':'_','&':'&','#':'#','{':'{','}':'}','$':'$'};
+function texToText(t){
+  return String(t).replace(/\\(?:text|mathrm|textbf|mathbf|operatorname)\{([^}]*)\}/g,'$1')
+    .replace(/\\frac\{([^}]*)\}\{([^}]*)\}/g,'($1)/($2)').replace(/\\sqrt\{([^}]*)\}/g,'√($1)')
+    .replace(/\\([A-Za-z]+|[,;! %_&#{}$])/g,(m,c)=>c in TEX?TEX[c]:m)
+    .replace(/\^\{([^}]*)\}/g,'^$1').replace(/_\{([^}]*)\}/g,'$1').replace(/(?<!\\)[{}]/g,'').replace(/[ \t]+/g,' ').trim();
+}
+function convertTex(src){
+  return String(src||'').split(/(```[\s\S]*?```|`[^`\n]*`)/).map((part,i)=>i%2?part:part
+    .replace(/\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g,(m,a,b)=>{const t=a||b;return /\\[A-Za-z]|\^\{|_\{/.test(t)?texToText(t):m})
+    .replace(/\\(rightarrow|leftarrow|Rightarrow|Leftarrow|leftrightarrow|times|leq?|geq?|neq|cdot|bowtie|sigma|pi|cup|cap|infty)(?![A-Za-z])/g,(m,c)=>TEX[c])).join('');
+}
+function md(s){return marked.parse(convertTex(s))}
 function hl(root){root.querySelectorAll('pre code').forEach(el=>{try{hljs.highlightElement(el)}catch(e){}})}
 function downloadText(name,text){
   if(window.AndroidBridge&&AndroidBridge.saveText){const p=AndroidBridge.saveText(name,text);toast('저장됨: '+p,4000);return}
@@ -1448,10 +1467,23 @@ function parseMarkdown(text,fileName){
   }
   return out;
 }
-const ENUM_RE=/^\s*(?:\d{1,2}\s*[.)]|[①-⑳]|\(\d{1,2}\)|[ㄱ-ㅎ]\s*[.):]|[A-Za-z]\s*[.):](?=\s))\s*/;
+const ENUM_RE=/^\s*(?:\d{1,2}\s*[.)](?!\d)|[①-⑳]|\([\dA-Za-zㄱ-ㅎ]{1,2}\)|[ㄱ-ㅎ]\s*[.):]|[A-Za-z]\s*[.):](?=\s))\s*/;
 const cleanKw=x=>String(x).replace(/[*`_#>]/g,'').replace(ENUM_RE,'').replace(ENUM_RE,'').trim();
-function splitKw(s){return [...new Set(String(s).split(/[,，\/;·]|\n|[①-⑳]/).map(cleanKw).filter(x=>x&&x.length<=40))].slice(0,8)}
-function stripMd(s){return String(s||'').replace(/```[\s\S]*?```/g,'').replace(/[*`_#>|]/g,'').trim()}
+/* 키워드: 괄호 밖의 구분자로만 나누고, '한글(영문)'은 두 개로 분리, 보기 기호(ㄱ ① 1)만 있는 괄호는 버림 */
+function splitTop(s){const out=[];let d=0,cur='';for(const ch of String(s)){if('([{'.includes(ch))d++;else if(')]}'.includes(ch))d=Math.max(0,d-1);if(d===0&&/[,，\/;·\n①-⑳]/.test(ch)){out.push(cur);cur='';continue}cur+=ch}out.push(cur);return out.flatMap(x=>x.split(/\s+또는\s+/))}
+const KW_SYM=/^(?:[ㄱ-ㅎ]|[①-⑳]|\d{1,2}|[A-Za-z])$/;
+function aliasSplit(p){
+  p=cleanKw(p);if(!p)return [];
+  if(/[\[\]{}%=<>+*\\]|\w\(\)/.test(p))return [p]; // 코드·수식은 그대로
+  const m=p.match(/^(.*?)\s*\(([^()]+)\)\s*(?:패턴|방식|기법)?$/);if(!m)return [p];
+  const outer=m[1].trim(),inner=m[2].split(/[,，\/]/).map(x=>x.trim()).filter(x=>x&&!KW_SYM.test(x));
+  const res=[];if(outer&&!KW_SYM.test(outer))res.push(outer);res.push(...inner);
+  return res.length?res:[p];
+}
+const codeLike=x=>/[%=<>{}\[\]+*&|^]|\w\s*\/\s*\d/.test(x);
+function expandKw(list){return [...new Set((list||[]).flatMap(x=>codeLike(x)?[String(x).trim()]:splitTop(x)).flatMap(aliasSplit).map(x=>x.trim()).filter(x=>x&&x.length<=40&&/[가-힣A-Za-z]/.test(x)))].slice(0,8)}
+function splitKw(s){return expandKw([s])}
+function stripMd(s){return convertTex(s).replace(/```[\s\S]*?```/g,'').replace(/[*`_#>|]/g,'').trim()}
 
 function detectType(body,answer){
   const b=body||'';
@@ -1472,13 +1504,13 @@ function finishQ(q){
   q.id=q.id||(q.origin==='ai'?'ai_':'q_')+hash((q.source||'')+'|'+(q.no||'')+'|'+q.body.slice(0,120));
   return q;
 }
-function autoKw(ans){const a=stripMd(ans);if(!a)return [];if(/```|\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT)\b|[;{}=]/i.test(ans))return [];if(a.length<=80)return splitKw(a.replace(/[①-⑳]|\(\d+\)|^\s*\d+[\.\)]/gm,','));return [...String(ans).matchAll(/\*\*(.+?)\*\*/g)].map(m=>m[1]).slice(0,6)}
+function autoKw(ans){const a=stripMd(ans);if(!a)return [];if(/```|\b(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|GRANT)\b|[;{}=%&<>\[\]]|\w\s*\/\s*\d/i.test(ans))return [];if(a.length<=80)return splitKw(a.replace(/[①-⑳]|\(\d+\)|^\s*\d+[\.\)]/gm,','));return [...String(ans).matchAll(/\*\*(.+?)\*\*/g)].map(m=>m[1]).slice(0,6)}
 function normalizeJson(j,origin){
   const arr=Array.isArray(j)?j:(j.questions||j.items||[]);
   return arr.filter(x=>x&&(x.body||x.question)).map(x=>finishQ({
     id:x.id,source:x.source||x.exam||'',no:x.no??x.number??'',topic:x.topic||'',
     body:String(x.body||x.question),answer:String(x.answer??''),explanation:String(x.explanation||''),
-    keywords:Array.isArray(x.keywords)?x.keywords:(x.keywords?splitKw(x.keywords):[]),
+    keywords:Array.isArray(x.keywords)?expandKw(x.keywords):(x.keywords?splitKw(x.keywords):[]),
     type:x.type,lang:x.lang||'',grade:Array.isArray(x.grade)?x.grade:undefined,summary:!!x.summary,origin:origin||x.origin||'bank'}));
 }
 function addQuestions(list){
@@ -1493,10 +1525,21 @@ function sortBank(){S.bank.sort((a,b)=>srcKey(a.source)-srcKey(b.source)||String
 const norm=s=>stripMd(s).toLowerCase().replace(/[\s'"·.,，\-_()\[\]{}:;!?~=＝]/g,'');
 function variants(p){const v=[p];const inner=[...p.matchAll(/\(([^)]+)\)/g)].map(m=>m[1]);const outer=p.replace(/\([^)]*\)/g,'');if(inner.length){v.push(outer,...inner)}return v.map(norm).filter(x=>x.length>0)}
 function isShortAnswer(q){if(q.grade&&q.grade.length)return true;return !/```/.test(q.answer||'')&&stripMd(q.answer).length>0&&stripMd(q.answer).length<=70}
+/* 빈칸이 여러 개면 순서까지 본다: 순서대로 맞힌 개수로 점수, 내용은 다 있는데 순서가 다르면 알려줌 */
+function orderedScore(partVars,u){
+  if(!partVars.length)return {verdict:'오답',score:0};
+  const pos=vs=>{let best=-1;for(const v of vs){const i=u.indexOf(v);if(i>=0&&(best<0||i<best))best=i}return best};
+  const found=partVars.map(pos);const all=found.filter(i=>i>=0).length;
+  let inOrder=0,last=-1;
+  partVars.forEach(vs=>{let b=-1;for(const v of vs){const i=u.indexOf(v,last+1);if(i>=0&&(b<0||i<b))b=i}if(b>=0){inOrder++;last=b}});
+  const n=partVars.length,r=inOrder/n;
+  const res=r===1?{verdict:'정답',score:100}:r>0?{verdict:'부분정답',score:Math.round(r*100)}:{verdict:'오답',score:0};
+  if(n>=2&&all===n&&inOrder<n)res.note='빈칸 순서가 다릅니다. 문제의 ①②… 순서대로 썼는지 확인하세요.';
+  return res;
+}
 function autoGrade(q,user){
   const u=norm(user);if(!u)return {verdict:'오답',score:0};
-  if(q.grade&&q.grade.length){const h=q.grade.filter(p=>String(p).split('|').map(norm).some(v=>v&&u.includes(v))).length,r=h/q.grade.length;
-    return r===1?{verdict:'정답',score:100}:r>0?{verdict:'부분정답',score:Math.round(r*100)}:{verdict:'오답',score:0}}
+  if(q.grade&&q.grade.length)return orderedScore(q.grade.map(p=>String(p).split('|').map(norm).filter(Boolean)),u);
   const ans=stripMd(q.answer);
   if(norm(ans)===u)return {verdict:'정답',score:100};
   let parts,mode='all';
@@ -1507,8 +1550,7 @@ function autoGrade(q,user){
   parts=parts.map(x=>x.replace(ENUM_RE,'').replace(/^[\s:：]+|[\s:：]+$/g,'')).filter(Boolean);
   const hit=p=>variants(p).some(v=>u.includes(v)||(v.includes(u)&&u.length>=Math.max(2,v.length*0.6)));
   if(mode==='any')return parts.some(hit)?{verdict:'정답',score:100}:{verdict:'오답',score:0};
-  const h=parts.filter(hit).length,r=parts.length?h/parts.length:0;
-  return r===1?{verdict:'정답',score:100}:r>0?{verdict:'부분정답',score:Math.round(r*100)}:{verdict:'오답',score:0};
+  return orderedScore(parts.map(p=>variants(p)),u);
 }
 
 /* ================= Gemini ================= */
@@ -1549,7 +1591,7 @@ async function callModel(model,parts,opts,key){
   const gc={maxOutputTokens:maxTokens};
   if(!/^gemini-[3-9]/.test(model))gc.temperature=temperature; // Gemini 3 이상은 기본 temperature 권장
   if(json)gc.responseMimeType='application/json';
-  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify({contents:[{role:'user',parts}],generationConfig:gc})});
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify({systemInstruction:{parts:[{text:'수식·화살표·기호는 LaTeX($...$, \\rightarrow 등)로 쓰지 말고 →, ⇒, ×, ≤, ≥, ≠, σ, π, ⋈ 같은 유니코드 문자로 직접 쓴다.'}]},contents:[{role:'user',parts}],generationConfig:gc})});
   const j=await r.json().catch(()=>({}));
   if(!r.ok){
     const msg=(j.error&&j.error.message)||('HTTP '+r.status);
@@ -1774,10 +1816,10 @@ function renderSolve(err){
   const donor=q.summary&&!q.restored?findDonor(q,true):null;
   const canAI=!!S.settings.apiKey;
   const rnote=q.summary?`<div class="muted" style="margin-top:6px">요약 문항입니다.${donor?'':' 버튼을 누를 때만 문제를 만들어 저장합니다.'}</div>${donor?`<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">같은 문제의 저장된 본문 보기 (${esc(donor.source)} ${esc(donor.no)}번)</summary><div class="md">${md(donor.body)}</div></details>`:''}${canAI?'<div class="row" style="margin-top:6px"><button class="btn sm" id="regenQ">AI로 문제 만들기 (요청 1회)</button></div>':''}`
-    :q.restored?`<div class="muted" style="margin-top:6px">AI가 요약을 바탕으로 만든 문제입니다. 실제 원문과 다를 수 있습니다.</div><div class="row" style="margin-top:6px">${canAI?'<button class="btn sm" id="regenQ">문제 다시 생성 (요청 1회)</button>':''}${q.prevBody?'<button class="btn sm" id="undoQ">이전 문제로</button>':''}</div>`
-    :q.origin==='ai'&&canAI?`<div class="row" style="margin-top:6px"><button class="btn sm" id="regenQ">비슷한 문제 새로 만들기 (요청 1회)</button></div>`:'';
+    :q.restored?`${(m=>m?`<div class="res mid" style="margin-top:6px;padding:8px 10px">⚠ 문제의 빈칸 ${m.blanks}개와 정답 항목 ${m.n}개가 맞지 않습니다. '문제 다시 생성'을 권장합니다.</div>`:'')(blankMismatch(q))}<div class="muted" style="margin-top:6px">AI가 요약을 바탕으로 만든 문제입니다. 실제 원문과 다를 수 있습니다.</div><div class="row" style="margin-top:6px">${canAI?'<button class="btn sm" id="regenQ">문제 다시 생성 (요청 1회)</button>':''}${q.prevBody?'<button class="btn sm" id="undoQ">이전 문제로</button>':''}</div>`
+    :q.origin==='ai'?`${(m=>m?`<div class="res mid" style="margin-top:6px;padding:8px 10px">⚠ 문제의 빈칸 ${m.blanks}개와 정답 항목 ${m.n}개가 맞지 않습니다.${canAI?' \'비슷한 문제 새로 만들기\'로 새 문제를 받아 보세요.':''}</div>`:'')(blankMismatch(q))}${canAI?'<div class="row" style="margin-top:6px"><button class="btn sm" id="regenQ">비슷한 문제 새로 만들기 (요청 1회)</button></div>':''}`:'';
   v.innerHTML=`<div class="card">${bar}${qHead(q)}<div class="md" id="qBody">${md(q.body)}</div>${rnote}
-  ${quick?`<div class="res mid"><div class="verdict v-mid">정답</div><div class="md">${md(q.answer||'_정답 데이터 없음_')}</div><h3 class="sec">키워드</h3>${kwHtml(q)}</div>
+  ${quick?`<div class="res mid"><div class="verdict v-mid">정답</div><div class="md">${md(q.answer||'_정답 데이터 없음_')}</div>${q.keywords&&q.keywords.length?`<h3 class="sec">키워드</h3>${kwHtml(q)}`:''}</div>
     <div class="row"><button class="btn" id="qConf">헷갈림 → 오답노트</button><button class="btn pri" id="qNext">다음 ▶</button></div>`
   :`<div style="margin-top:12px"><textarea id="ans" class="${mono?'mono':''}" placeholder="답 입력  ·  시간 없으면 '바로 정답' 입력" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea></div>
     <div class="row"><button class="btn" id="qSkip">건너뛰기</button><button class="btn" id="qShow">정답 보기</button><button class="btn pri" id="qSub">제출</button></div>
@@ -1810,10 +1852,11 @@ function submit(user,reveal=false){
   const cls=g?(g.verdict==='정답'?'ok':g.verdict==='부분정답'?'mid':'bad'):'';
   const needAI=!reveal&&user.trim()&&!g;
   r.innerHTML=`<div class="res ${cls}">
-    ${g?`<div class="verdict v-${cls}">${g.verdict}${g.verdict==='부분정답'?` (${g.score}%)`:''} <span class="muted">자동 채점</span></div>`:reveal?'<div class="verdict">정답 확인</div>':'<div class="verdict">채점 대기</div>'}
+    ${g?`<div class="verdict v-${cls}">${g.verdict}${g.verdict==='부분정답'?` (${g.score}%)`:''} <span class="muted">자동 채점</span></div>${g.note?`<div class="muted" style="color:var(--mid)">${esc(g.note)}</div>`:''}`:reveal?'<div class="verdict">정답 확인</div>':'<div class="verdict">채점 대기</div>'}
     ${user.trim()?`<h3 class="sec">내 답</h3><div class="md"><pre><code class="${q.lang?'language-'+esc(q.lang):''}">${esc(user)}</code></pre></div>`:''}
     <h3 class="sec">정답</h3><div class="md">${md(q.answer||'_정답 데이터 없음 — AI 해설로 확인하세요_')}</div>
-    <h3 class="sec">키워드</h3>${kwHtml(q)}
+    ${q.keywords&&q.keywords.length?`<h3 class="sec">키워드</h3>${kwHtml(q)}`:''}
+    ${q.origAnswer&&q.origAnswer!==q.answer?`<div class="muted">정답 표기 순서는 이 문제의 빈칸 순서에 맞췄습니다 (원래 표기: ${esc(q.origAnswer)})</div>`:''}
     ${q.restored&&q.origBody?`<h3 class="sec">원래 요약</h3><div class="muted">${esc(stripMd(q.origBody).replace(/요약 문항:.*$/,'').trim())}</div>`:''}
     <h3 class="sec">해설</h3><div class="md" id="expl">${q.explanation?md(q.explanation):(()=>{const d=findDonor(q,false);return d?`<div class="muted">같은 문제의 저장된 해설 (${esc(d.source)} ${esc(d.no)}번)</div>${md(d.explanation)}`:'<span class="muted">저장된 해설이 없습니다. 필요할 때만 아래 \'AI 해설 생성\'을 누르세요(요청 1회).</span>'})()}</div>
     <div id="aiBox"></div>
@@ -1838,7 +1881,7 @@ JSON으로만: {"verdict":"정답|부분정답|오답","score":0~100,"feedback":
     }catch(e){toast(e.message,4000);ag.disabled=false;ag.textContent='AI 채점'}};
   $('#aiExp').onclick=async e=>{const b=e.target;b.disabled=true;b.innerHTML='<span class="spin"></span> 해설 생성 중';
     if(q.summary&&!q.restored){ // 요약 문항: 요청 1회로 본문+해설을 함께 만들어 저장
-      try{const n=await restoreBatch([q]);if(!n)throw new Error('생성 결과가 비어 있습니다');
+      try{const n=await restoreBatch([q]);if(!n)throw new Error(restoreBatch.lastReject?`생성된 문제가 정답과 맞지 않아 저장하지 않았습니다(${restoreBatch.lastReject}). 다시 눌러 보세요.`:'생성 결과가 비어 있습니다');
         const qb=$('#qBody');if(qb){qb.innerHTML=md(q.body);hl(qb)}$('#expl').innerHTML=md(q.explanation||'');hl($('#expl'));b.textContent='AI 해설 다시';toast('문제 본문과 해설을 저장했습니다')}
       catch(err){toast(err.message,6000);b.textContent='AI 해설 생성'}
       b.disabled=false;return}
@@ -1848,7 +1891,7 @@ JSON으로만: {"verdict":"정답|부분정답|오답","score":0~100,"feedback":
 - 이론 문제: 정의 → 구분 포인트(헷갈리는 유사 개념 비교) → 암기 팁
 [문제]\n${q.body}\n[기존 정답]\n${q.answer||'(없음, 직접 풀어서 제시)'}
 JSON으로만: {"answer":"정답(기존 정답이 있으면 그대로)","keywords":["2~5개"],"explanation":"마크다운 해설"}`}],{temperature:0.3,maxTokens:12000});
-      if(!q.answer&&j.answer)q.answer=j.answer;if(j.keywords&&j.keywords.length&&(!q.keywords||!q.keywords.length))q.keywords=j.keywords;q.explanation=j.explanation||q.explanation;q.aiExp=true;await saveQ(q);
+      if(!q.answer&&j.answer)q.answer=j.answer;if(j.keywords&&j.keywords.length&&(!q.keywords||!q.keywords.length))q.keywords=expandKw(j.keywords);q.explanation=sanitizeExpl(j.explanation||q.explanation);q.aiExp=true;await saveQ(q);
       $('#expl').innerHTML=md(q.explanation);hl($('#expl'));b.textContent='AI 해설 다시';
     }catch(err){toast(err.message,4000);b.textContent='AI 해설 생성'}b.disabled=false};
   r.scrollIntoView({behavior:'smooth',block:'start'});
@@ -2005,38 +2048,82 @@ function sanitizeAIBody(body,answer){
   }
   return b.replace(/\n{3,}/g,'\n\n').trim();
 }
+/* 생성 결과 검사: 빈칸 수 ≠ 정답 수, 용어 정답인데 '기호로' 묻는 문제는 저장하지 않음 */
+function checkGenerated(q,r){
+  const parts=answerParts(q.answer);
+  if(Array.isArray(r.blanks)&&r.blanks.length>=2&&parts.length>=2){
+    const nb=r.blanks.map(x=>norm(String(x).replace(ENUM_RE,''))),np=parts.map(norm);
+    const same=nb.length===np.length&&[...nb].sort().join('|')===[...np].sort().join('|');
+    if(!same)return '빈칸별 정답이 주어진 정답과 다릅니다';
+    if(nb.join('|')!==np.join('|'))r._answer=r.blanks.map(x=>String(x).replace(ENUM_RE,'').trim()).join(', '); // 문제의 빈칸 순서에 맞춰 정답 표기 순서 조정
+  }
+  const t=Object.assign({},q,{body:sanitizeAIBody(r.body,q.answer),restored:true});
+  const m=blankMismatch(t);if(m)return `빈칸 ${m.blanks}개 / 정답 ${m.n}개로 맞지 않습니다`;
+  if(/기호로\s*쓰/.test(t.body)&&!/[ㄱ-ㅎ①-⑳]/.test(q.answer||''))return '정답은 용어인데 문제가 기호로 쓰라고 묻습니다';
+  return '';
+}
+/* AI 해설 안의 '[정답] …' 줄 제거: 정답은 위 정답 칸(저장된 정답)만 기준으로 보여줌 */
+function sanitizeExpl(e){
+  const L=String(e||'').split('\n'),out=[];let skip=false;
+  for(const l of L){
+    if(/^\s*(?:#{1,6}\s*|\*\*|>\s*)?\[?\s*(?:최종\s*)?정답\s*\]?(?:\*\*)?\s*[:：]?\s*(?:\*\*)?\s*$/.test(l)){skip=true;continue}
+    if(/^\s*(?:\*\*)?\[?\s*(?:최종\s*)?정답\s*\]?(?:\*\*)?\s*[:：]/.test(l))continue;
+    if(skip){if(l.trim()==='')continue;skip=false;continue}
+    out.push(l);
+  }
+  return out.join('\n').replace(/\n{3,}/g,'\n\n').trim();
+}
 function applyRestore(q,r){
   if(!r||!r.body||String(r.body).length<10)return false;
   q.origBody=q.origBody||q.body;q.body=sanitizeAIBody(r.body,q.answer);q.restored=true;q.summary=false;
-  if(r.explanation){q.explanation=String(r.explanation);q.aiExp=true}
-  if(Array.isArray(r.keywords)&&r.keywords.length)q.keywords=r.keywords.slice(0,6);
+  if(r._answer&&r._answer!==q.answer){q.origAnswer=q.origAnswer||q.answer;q.answer=r._answer;q.keywords=autoKw(q.answer).length?q.keywords:q.keywords}
+  if(r.explanation){q.explanation=sanitizeExpl(r.explanation);q.aiExp=true}
+  if(Array.isArray(r.keywords)&&r.keywords.length)q.keywords=expandKw(r.keywords);
   if(!q.lang){const d=detectType(q.body,q.answer);if(d.lang)q.lang=d.lang}
   return true;
 }
 async function restoreBatch(list,{again=false}={}){
-  const items=list.map((q,i)=>({id:String(i),source:q.source,no:q.no,type:q.type,lang:q.lang,topic:q.topic,summary:stripMd(q.origBody||q.body).replace(/요약 문항:.*$/,'').trim(),answer:q.answer}));
+  const items=list.map((q,i)=>({id:String(i),source:q.source,no:q.no,type:q.type,lang:q.lang,topic:q.topic,summary:stripMd(q.origBody||q.body).replace(/요약 문항:.*$/,'').trim(),answer:q.answer,answerCount:answerParts(q.answer).length}));
   const arr=await gemini([{text:`너는 한국산업인력공단 정보처리기사 실기 출제위원이다. 아래 각 항목은 실제 기출문제의 '요약'과 '정답'이다. 항목마다 실제 시험지 형태의 완전한 문제를 복원하고 해설을 작성하라.
 
 규칙
 - 정답은 주어진 answer와 반드시 일치해야 한다. 문제를 풀면 정확히 그 answer가 나오도록 만든다.
 - 코드 출력 문제(C/Java/Python)는 컴파일·실행 가능한 전체 코드를 쓰고, 한 줄씩 추적해 출력이 answer와 정확히 같은지 검증한 뒤 쓴다. 요약에 나온 값·키워드(예: static, 포인터, 슬라이싱 범위)를 그대로 반영한다.
 - SQL 문제는 필요한 테이블을 마크다운 표로 제시하고, 결과가 answer와 같게 데이터를 구성한다.
-- answer에 보기 기호(ㄱ, ㄴ, ①…)가 있으면 <보기>를 만들어 그 기호가 정답이 되게 한다. 빈칸 문제는 빈칸을 (①) 형태로 표시한다.
+- 설명·빈칸의 개수는 answerCount와 정확히 같아야 한다. 설명 ①번의 답이 answer의 첫 항목, ②번이 두 번째 항목이 되게 순서를 맞춘다. answerCount보다 많거나 적게 만들지 않는다.
+- answer에 보기 기호(ㄱ, ㄴ, ①…)가 있으면 <보기>를 만들어 그 기호가 정답이 되게 한다. answer가 용어(영문·한글 단어)라면 '기호로 쓰시오'라고 묻지 말고 '<보기>에서 찾아 쓰시오' 또는 '용어를 쓰시오'로 묻는다.
+- <보기>를 만들 때는 정답 항목의 순서를 뒤섞고 오답 보기를 1~3개 섞는다. <보기> 순서가 설명 순서나 answer 순서와 같으면 안 된다.
+- 빈칸은 (①), (②)처럼 표시하고, 답안 칸 안내도 answerCount개만 쓴다.
+- explanation에 '[정답]'을 따로 적지 않는다. 정답은 주어진 answer 하나뿐이며 다른 형태(기호 등)로 바꿔 쓰지 않는다.
 ${again?'- 이미 만든 문제가 있다. 정답은 그대로 두고, 코드·값·보기·상황을 바꿔 이전과 다른 형태의 문제로 다시 만든다.\n':''}- body에는 정답이나 정답이 드러나는 예시·'정답 작성 형식'을 절대 넣지 않는다. 답 형식 안내가 필요하면 '① ____ / ② ____'처럼 빈칸만 쓴다.\n- 요약에 없는 세부는 실제 시험 문장 스타일로 자연스럽게 채운다. 실제 원문과 똑같을 필요는 없다.
 - body: 마크다운(문제 문장 + 코드블록/표/보기). explanation: 마크다운 해설(코드는 변수 변화 추적, 이론은 정의와 헷갈리는 개념 비교).
 
 출력: 아래 형식 객체의 JSON 배열만. id는 입력 그대로.
-[{"id":"0","body":"...","explanation":"...","keywords":["2~5개"]}]
+[{"id":"0","body":"...","blanks":["①의 정답","②의 정답"],"explanation":"...","keywords":["2~5개"]}]
+blanks: 문제의 ①, ②… 순서대로 각 빈칸의 정답(answer 항목과 같은 표기). 빈칸이 하나면 생략.
 
 [항목]
 ${JSON.stringify(items)}`}],{temperature:0.3,maxTokens:60000});
   const res=Array.isArray(arr)?arr:[arr];let n=0;
-  res.forEach(r=>{const q=list[+r.id];if(q&&applyRestore(q,r)){n++;if(q.origin!=='ai')addToCollection(q)}});
+  restoreBatch.lastReject='';
+  res.forEach(r=>{const q=list[+r.id];if(!q||!r||!r.body)return;
+    const bad=checkGenerated(q,r);if(bad){restoreBatch.lastReject=bad;return}
+    if(applyRestore(q,r)){n++;if(q.origin!=='ai')addToCollection(q)}});
   if(n)await saveAI();
   if(list.some(q=>q.origin==='ai'))await saveAI();await saveBank();
   return n;
 }
 const restoring=new Set();
+function answerParts(a){const t=stripMd(a||'');if(!t||/또는/.test(t))return [t].filter(Boolean);return splitTop(t).map(x=>x.replace(ENUM_RE,'').trim()).filter(Boolean)}
+/* AI 문제의 빈칸·설명 수와 정답 항목 수가 다르면 경고 */
+function blankMismatch(q){
+  if(!(q.restored||q.origin==='ai'))return null;
+  const body=String(q.body||'').replace(/```[\s\S]*?```/g,'');
+  const under=(body.match(/_{3,}/g)||[]).length;
+  const circ=new Set((body.match(/[(\[]\s*[①-⑳]\s*[)\]]/g)||[]).map(x=>x.replace(/\D/g,'')||x)).size;
+  const blanks=Math.max(under,circ);const n=answerParts(q.answer).length;
+  return blanks>=2&&n>=2&&blanks!==n?{blanks,n}:null;
+}
 /* 생성된 문제 모음: 복원·다시 생성된 버전을 각각 독립 문항으로 S.ai에 보관(원 문항과 연결 정보 유지) */
 function addToCollection(q,ver){
   const v=ver||q;const id='ai_r_'+hash(q.id+'|'+v.body);
@@ -2050,7 +2137,7 @@ function migrateCollection(){
   S.bank.forEach(q=>{if(q.restored){if(addToCollection(q))n++;if(q.prev&&q.prev.body&&q.prev.body!==q.origBody&&addToCollection(q,q.prev))n++}});
   return n;
 }
-const PREV_KEYS=['body','answer','explanation','keywords','lang','type','grade'];
+const PREV_KEYS=['body','answer','origAnswer','explanation','keywords','lang','type','grade'];
 function keepPrev(q){q.prev={};PREV_KEYS.forEach(k=>q.prev[k]=q[k]);q.prevBody=q.body}
 function swapPrev(q){if(!q.prev)return;const cur={};PREV_KEYS.forEach(k=>cur[k]=q[k]);PREV_KEYS.forEach(k=>q[k]=q.prev[k]);q.prev=cur;q.prevBody=cur.body}
 /* 문제 (다시) 생성: 버튼을 눌렀을 때만, 요청 1회 */
@@ -2065,14 +2152,14 @@ body에는 정답이나 정답 작성 예시를 넣지 않는다.
 출력: 아래 스키마 객체 1개를 담은 JSON 배열만.
 ${QSCHEMA}`}],{temperature:0.9,maxTokens:16000});
       const n=normalizeJson(Array.isArray(arr)?arr:[arr],'ai')[0];if(!n||!n.body)throw new Error('생성 결과가 비어 있습니다');
-      n.body=sanitizeAIBody(n.body,n.answer);n.id='ai_'+hash(n.body+Date.now()+Math.random());n.kind='gen';n.from=q.from||q.id;n.created=Date.now();n.source=q.kind==='restore'?q.source.replace('AI 복원','AI 변형'):'AI 응용';
+      n.body=sanitizeAIBody(n.body,n.answer);n.explanation=sanitizeExpl(n.explanation);n.id='ai_'+hash(n.body+Date.now()+Math.random());n.kind='gen';n.from=q.from||q.id;n.created=Date.now();n.source=q.kind==='restore'?q.source.replace('AI 복원','AI 변형'):'AI 응용';
       S.ai.push(n);await saveAI();
       toast('비슷한 새 문제를 만들어 AI 생성 문제에 추가했습니다');
       if(S.cur===q){S.cur=n;S.reviewId=n.id;renderSolve()}
       return;
     }else{
       const again=!!q.restored;if(again)keepPrev(q);
-      const n=await restoreBatch([q],{again});if(!n){if(again)swapPrev(q);throw new Error('생성 결과가 비어 있습니다')}
+      const n=await restoreBatch([q],{again});if(!n){if(again)swapPrev(q);throw new Error(restoreBatch.lastReject?`생성된 문제가 정답과 맞지 않아 저장하지 않았습니다(${restoreBatch.lastReject}). 다시 눌러 보세요.`:'생성 결과가 비어 있습니다')}
     }
     toast('새 문제를 저장했습니다');
     if(S.cur===q)renderSolve();
@@ -2286,7 +2373,7 @@ window.onAndroidBack=()=>{if(S.view!=='solve'){show('solve');return true}return 
 
 (async()=>{await load();applyTheme();show('solve');autoSync().catch(()=>{})})();
 if('serviceWorker' in navigator&&location.hostname!=='appassets.androidplatform.net'&&(location.protocol==='https:'||location.hostname==='localhost')){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!window.__reloaded){window.__reloaded=true;location.reload()}})}
-window.__jcg={parseMarkdown,autoGrade,detectType,normalizeJson,S};
+window.__jcg={md,convertTex,splitKw,expandKw,parseMarkdown,autoGrade,detectType,normalizeJson,S};
 </script>
 </body>
 </html>
