@@ -2,8 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#1f6feb">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="theme-color" content="#2563eb">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -22,36 +22,36 @@
   Current colors taken from GitHub's CSS
 */.hljs{color:#c9d1d9;background:#0d1117}.hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-template-tag,.hljs-template-variable,.hljs-type,.hljs-variable.language_{color:#ff7b72}.hljs-title,.hljs-title.class_,.hljs-title.class_.inherited__,.hljs-title.function_{color:#d2a8ff}.hljs-attr,.hljs-attribute,.hljs-literal,.hljs-meta,.hljs-number,.hljs-operator,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-id,.hljs-variable{color:#79c0ff}.hljs-meta .hljs-string,.hljs-regexp,.hljs-string{color:#a5d6ff}.hljs-built_in,.hljs-symbol{color:#ffa657}.hljs-code,.hljs-comment,.hljs-formula{color:#8b949e}.hljs-name,.hljs-quote,.hljs-selector-pseudo,.hljs-selector-tag{color:#7ee787}.hljs-subst{color:#c9d1d9}.hljs-section{color:#1f6feb;font-weight:700}.hljs-bullet{color:#f2cc60}.hljs-emphasis{color:#c9d1d9;font-style:italic}.hljs-strong{color:#c9d1d9;font-weight:700}.hljs-addition{color:#aff5b4;background-color:#033a16}.hljs-deletion{color:#ffdcd7;background-color:#67060c}</style>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f24;--muted:#667080;--line:#e2e5ea;--pri:#1f6feb;--pri-fg:#fff;--ok:#1a7f37;--ok-bg:#e7f6ec;--bad:#cf222e;--bad-bg:#fdecee;--mid:#9a6700;--mid-bg:#fff6dd;--code-bg:#0d1117;--chip:#eef2f8}
+:root{--bg:#f8fafc;--card:#fff;--fg:#0f172a;--muted:#64748b;--line:#e2e8f0;--pri:#2563eb;--pri-h:#1d4ed8;--pri-fg:#fff;--ok:#15803d;--ok-bg:#ecfdf3;--bad:#b91c1c;--bad-bg:#fef2f2;--mid:#a16207;--mid-bg:#fefce8;--code-bg:#0d1117;--chip:#f1f5f9}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0e1116;--card:#161b22;--fg:#e6edf3;--muted:#8b949e;--line:#30363d;--pri:#2f81f7;--ok:#3fb950;--ok-bg:#12261a;--bad:#f85149;--bad-bg:#2c1416;--mid:#d29922;--mid-bg:#2b2310;--chip:#21262d}}
 :root[data-theme=dark]{--bg:#0e1116;--card:#161b22;--fg:#e6edf3;--muted:#8b949e;--line:#30363d;--pri:#2f81f7;--ok:#3fb950;--ok-bg:#12261a;--bad:#f85149;--bad-bg:#2c1416;--mid:#d29922;--mid-bg:#2b2310;--chip:#21262d}
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,"Noto Sans KR","Malgun Gothic",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+html,body{margin:0;background:var(--bg);color:var(--fg);overflow-x:hidden;font:15px/1.6 -apple-system,"Noto Sans KR","Malgun Gothic",Roboto,sans-serif;-webkit-text-size-adjust:100%}
 header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:10px 14px calc(8px) ;padding-top:max(10px,env(safe-area-inset-top))}
 .top{display:flex;align-items:center;gap:8px}
 .top h1{font-size:16px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stage{font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .bar{height:4px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:6px}.bar>i{display:block;height:100%;background:var(--pri);width:0}
-main{max-width:760px;margin:0 auto;padding:12px 12px 90px}
+main{max-width:760px;margin:0 auto;padding:14px 16px 96px}
 nav{position:fixed;bottom:0;left:0;right:0;z-index:5;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
 nav button{flex:1;background:none;border:0;color:var(--muted);padding:10px 0 12px;font-size:13px;font-weight:600}
 nav button.on{color:var(--pri)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
 .badges{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
 .b{font-size:11.5px;padding:2px 8px;border-radius:99px;background:var(--chip);color:var(--muted);font-weight:600}
 .b.ai{background:#efe3ff;color:#6e40c9}.b.type{background:#e0ecff;color:#1f6feb}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .b.ai{background:#2b1f45;color:#c297ff}:root:not([data-theme=light]) .b.type{background:#132b4f;color:#79b8ff}}
 :root[data-theme=dark] .b.ai{background:#2b1f45;color:#c297ff}:root[data-theme=dark] .b.type{background:#132b4f;color:#79b8ff}
 .md{overflow-wrap:anywhere}.md p{margin:.5em 0}.md table{border-collapse:collapse;display:block;overflow-x:auto;margin:.6em 0}.md th,.md td{border:1px solid var(--line);padding:4px 8px;font-size:14px}
-.md pre{background:var(--code-bg);color:#e6edf3;border-radius:8px;padding:12px;overflow-x:auto;font-size:13px;line-height:1.5}
+.md pre{background:var(--code-bg);color:#e6edf3;border-radius:10px;padding:12px 14px;overflow-x:auto;max-width:100%;font-size:13.5px;line-height:1.55;tab-size:4;-webkit-overflow-scrolling:touch}
 .md code{font-family:"JetBrains Mono",Consolas,"D2Coding",monospace;font-size:.92em}.md :not(pre)>code{background:var(--chip);padding:1px 5px;border-radius:4px}
 .md pre code.hljs{background:transparent;padding:0}
 .md blockquote{margin:.5em 0;padding:.2em .8em;border-left:3px solid var(--line);color:var(--muted)}
 textarea,input,select{width:100%;font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px}
 textarea{min-height:70px;resize:vertical}textarea.mono{font-family:Consolas,"D2Coding",monospace;font-size:14px;min-height:110px}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.row>*{flex:1}
-.btn{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:10px 12px;font:inherit;font-weight:600;min-height:42px}
-.btn.pri{background:var(--pri);border-color:var(--pri);color:var(--pri-fg)}.btn.sm{padding:6px 10px;min-height:32px;font-size:13px;flex:0 0 auto}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:10px;padding:10px 12px;font:inherit;font-weight:600;min-height:48px;cursor:pointer}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:var(--pri-fg)}.btn.pri:active{background:var(--pri-h)}.btn.text{border-color:transparent;background:transparent;color:var(--muted)}.btn.danger{color:var(--bad);border-color:var(--bad)}.btn.sm{padding:6px 10px;min-height:32px;font-size:13px;flex:0 0 auto}
 .btn:disabled{opacity:.5}
 .toggle{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;background:var(--chip);border-radius:99px;padding:5px 10px;border:0;color:var(--fg)}
 .toggle.on{background:var(--mid-bg);color:var(--mid)}
@@ -68,9 +68,28 @@ label.f{display:block;font-size:13px;font-weight:700;margin:12px 0 4px}
 .toast{position:fixed;left:50%;top:calc(72px + env(safe-area-inset-top));transform:translateX(-50%);background:#1b1f24;color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;z-index:20;max-width:90vw;opacity:0;transition:.2s;pointer-events:none}.toast.show{opacity:1}
 .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-2px}@keyframes s{to{transform:rotate(360deg)}}
 .hidden{display:none!important}
+/* UX 개선: 포커스 표시, 풀이 화면 위계, 학습 홈 */
+:focus-visible{outline:3px solid color-mix(in srgb,var(--pri) 55%,transparent);outline-offset:2px}
+#qBody{font-size:16px;line-height:1.75}#qBody p{margin:.6em 0}
+.qprog{display:flex;align-items:center;gap:10px;margin-bottom:10px}.qprog .num{font-weight:800;font-size:15px;white-space:nowrap}.qprog .bar{flex:1;margin:0}
+.qmeta{font-size:12.5px;color:var(--muted);margin-bottom:6px}
+label.ans{display:block;font-size:13px;font-weight:700;color:var(--muted);margin:16px 0 6px}
+body.solving nav{display:none}
+body.solving .actbar{padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+.actbar .btn.text{flex:0 0 auto;padding:8px 10px}
+.judge{display:flex;gap:6px;flex:1.4}.judge .btn{flex:1}
+.hero{padding:18px 16px}.hero h2{margin:0 0 4px;font-size:20px}.hero .sub{color:var(--muted);font-size:13.5px;margin-bottom:12px}
+.cta{width:100%;min-height:54px;font-size:16px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.tile{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:12px;text-align:left;font:inherit;color:var(--fg);cursor:pointer;min-height:76px}
+.tile b{display:block;font-size:14.5px;margin-bottom:2px}.tile span{color:var(--muted);font-size:12.5px}.tile:disabled{opacity:.5}
+details.cond>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:700}details.cond>summary::-webkit-details-marker{display:none}
+details.cond>summary:after{content:'▾';margin-left:auto;color:var(--muted)}details.cond[open]>summary:after{content:'▴'}
+.condsum{font-size:12.5px;color:var(--muted);font-weight:400;margin-top:2px}
+.empty-state{text-align:center;padding:22px 8px;color:var(--muted)}.empty-state b{display:block;color:var(--fg);margin-bottom:4px}
 /* 풀기 화면 하단 고정 버튼 바 + 그 위로 펼쳐지는 정답 확인 시트 */
-.actbar{position:fixed;left:0;right:0;z-index:6;background:var(--card);border-top:1px solid var(--line);padding:8px 12px;display:flex;gap:8px;max-width:760px;margin:0 auto}
-.actbar .btn{flex:1;min-height:44px;padding:8px 6px}
+.actbar{position:fixed;left:0;right:0;z-index:6;background:var(--card);border-top:1px solid var(--line);padding:8px 12px calc(8px + env(safe-area-inset-bottom));display:flex;gap:8px;max-width:760px;margin:0 auto}
+.actbar .btn{flex:1;min-height:48px;padding:8px 6px}
 .actbar .btn.sel-bad{background:var(--bad-bg);border-color:var(--bad);color:var(--bad)}.actbar .btn.sel-ok{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
 .sheet{position:fixed;left:0;right:0;z-index:6;max-width:760px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-bottom:0;border-radius:14px 14px 0 0;box-shadow:0 -6px 18px rgba(0,0,0,.14)}
 .sh-head{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;user-select:none}
@@ -105,7 +124,7 @@ label.f{display:block;font-size:13px;font-weight:700;margin:12px 0 4px}
   <button data-v="bank">문제은행</button>
   <button data-v="set">설정</button>
 </nav>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" class="hidden" multiple>
 
 <script>/**
@@ -1584,6 +1603,7 @@ async function modelChain(needList){
 function aiLog(entry){try{S.aiLog=(S.aiLog||[]).concat([Object.assign({t:Date.now()},entry)]).slice(-20);DB.set('ailog',S.aiLog)}catch(e){}}
 async function gemini(parts,opts={}){
   const key=S.settings.apiKey.trim();if(!key)throw new Error('설정에서 Gemini API 키를 입력하세요');
+  if(!navigator.onLine)throw new Error('오프라인 상태라 AI를 쓸 수 없습니다. 기출 풀이와 자동 채점은 그대로 됩니다.');
   const pref=preferredModel();let chain=await modelChain(false),fetched=false,lastErr=null;
   for(let k=0;k<chain.length||(!fetched&&S.settings.autoFallback!==false);k++){
     if(k>=chain.length){chain=await modelChain(true);fetched=true;if(k>=chain.length)break}
@@ -1789,6 +1809,8 @@ function startSession(o={}){
   const st=S.settings;
   S.session=Object.assign({target:st.target||'new',count:+st.count||0,order:st.order,done:0,ok:0,bad:0,quick:0,seen:new Set(),wrongIds:[],startTarget:st.target||'new'},o);
   if(o.target)S.session.startTarget=o.target;
+  if(!o.only){S.settings.lastSession={target:S.session.target,order:S.session.order,count:S.session.count,allTypes:!!S.session.allTypes,types:st.types.slice(),sources:st.sources.slice(),quick:!!st.quick,at:Date.now()};saveSet()}
+  pushSolveState();
   S.skip.clear();S.cur=null;S.reviewId=null;nextQuestion();
 }
 function endSession(){const ss=S.session;if(ss&&ss.done>0)return renderDone();S.session=null;S.cur=null;renderStart()}
@@ -1819,28 +1841,49 @@ function countSession(q,status){
   if(status==='correct')ss.ok++;else if(status==='wrong'){ss.bad++;if(!ss.wrongIds.includes(q.id))ss.wrongIds.push(q.id)}else if(status==='quick')ss.quick++;
 }
 function renderDone(){
-  const ss=S.session,v=$('#v-solve');renderHeader();
+  const ss=S.session,v=$('#v-solve');document.body.classList.remove('solving');renderHeader();
   const graded=ss.ok+ss.bad,rate=graded?Math.round(ss.ok/graded*100):null;
   v.innerHTML=`<div class="card"><b>풀이 결과</b><p class="muted">${esc(TARGETS[ss.startTarget])}${ss.count?` · ${ss.count}문항`:''}</p>${ss.note?`<p class="muted" style="color:var(--mid)">${esc(ss.note)}</p>`:''}
-    <div class="stats"><div><b>${ss.done}</b>푼 문항</div><div><b>${rate===null?'-':rate+'%'}</b>정답률</div><div><b>${ss.bad}</b>틀림</div></div>
-    <p class="muted" style="margin:10px 0 0">맞힘 ${ss.ok} · 틀림 ${ss.bad} · 빠른 확인 ${ss.quick}</p>
+    <div class="stats"><div><b>${ss.done}</b>푼 문항</div><div><b>${rate===null?'기록 없음':rate+'%'}</b>정답률${graded?` <span class="muted">(${graded}문항)</span>`:''}</div><div><b>${ss.bad}</b>틀림</div></div>
+    <p class="muted" style="margin:10px 0 0">✓ 맞힘 ${ss.ok} · ✕ 틀림 ${ss.bad} · 빠른 확인 ${ss.quick}${ss.quick?' (정답률 계산에서 제외)':''}</p>
     ${ss.wrongIds.length?`<h3 class="sec">이번에 틀린 문제</h3><div class="list">${ss.wrongIds.map(findQ).filter(Boolean).map(q=>`<div class="it"><div class="t"><div><b>${esc(q.source)}${q.no?' '+esc(q.no)+'번':''}</b> · ${esc(q.type)}</div><div class="muted">${esc(stripMd(q.body).slice(0,70))}</div></div></div>`).join('')}</div>`:''}
-    <div class="row">${ss.wrongIds.length?'<button class="btn" id="dWrong">틀린 문제 다시</button>':''}<button class="btn" id="dHome">처음 화면</button><button class="btn pri" id="dAgain">같은 조건으로 계속</button></div></div>`;
+    ${ss.wrongIds.length?'<div class="row"><button class="btn pri" id="dWrong">틀린 문제 다시 풀기</button></div>':''}
+    <div class="row"><button class="btn" id="dHome">학습 홈으로</button><button class="btn ${ss.wrongIds.length?'':'pri'}" id="dAgain">같은 조건으로 다시 풀기</button></div></div>`;
   $('#dHome').onclick=()=>{S.session=null;S.cur=null;renderStart()};
   $('#dAgain').onclick=()=>startSession();
   const w=$('#dWrong');if(w)w.onclick=()=>{const ids=new Set(ss.wrongIds);startSession({target:'wrong',order:'recent',allTypes:true,count:0,only:ids})};
 }
+function condSummary(st){
+  const ord={seq:'순서대로',random:'랜덤'}[st.order]||'순서대로';
+  return [TARGETS[st.target]||'안 푼 기출',st.types.length?st.types.join('/'):'전체 유형',st.sources.length?st.sources[0]:'전체 회차',ord,+st.count?`${st.count}문항`:'끝까지',st.quick?'빠른 확인':'기본 풀이'].join(' · ');
+}
 function renderStart(){
-  const v=$('#v-solve'),st=S.settings;renderHeader();
+  const v=$('#v-solve'),st=S.settings;document.body.classList.remove('solving');renderHeader();
   if(!S.bank.length)return renderSolve();
   const types=['단답형','서술형','코드','SQL'],srcs=[...new Set(S.bank.map(q=>q.source))];
   const typeCnt=t=>S.bank.filter(q=>q.type===t&&(!st.sources.length||st.sources.includes(q.source))).length;
   const cnt={new:poolFor('new',true).length,wrong:wrongList().length,all:filtered(S.bank).length,ai:pendingAI().length};
+  const allWrong=S.bank.concat(S.ai).filter(q=>S.progress[q.id]&&S.progress[q.id].status==='wrong').length;
+  const aiLeft=S.ai.filter(q=>!S.progress[q.id]).length;
   const graded=Object.values(S.progress).filter(p=>p.status==='correct'||p.status==='wrong');
-  const acc=graded.length?Math.round(graded.filter(p=>p.status==='correct').length/graded.length*100)+'%':'-';
+  const today=new Date();today.setHours(0,0,0,0);const todayN=Object.values(S.progress).filter(p=>(p.last||0)>=today.getTime()).length;
+  const solvedBank=S.bank.filter(q=>S.progress[q.id]).length;
   const avail=st.target==='ai'?(cnt.ai+(st.apiKey?' + 생성':'')):cnt[st.target];
-  v.innerHTML=`<div class="card"><div class="stats"><div><b>${S.bank.filter(q=>S.progress[q.id]).length}/${S.bank.length}</b>푼 기출</div><div><b>${acc}</b>정답률</div><div><b>${S.bank.concat(S.ai).filter(q=>S.progress[q.id]&&S.progress[q.id].status==='wrong').length}</b>오답</div></div></div>
-  <div class="card"><b>무엇을 풀까요</b>
+  // 이어서 풀기: 진행 중인 풀이 → 지난 조건 → 없으면 기출 풀기
+  const live=S.session&&S.cur&&!S.progress[S.cur.id];
+  const last=st.lastSession;
+  const lastLeft=last?(()=>{const keep={types:st.types,sources:st.sources};st.types=last.types||[];st.sources=last.sources||[];const n=last.target==='wrong'?(last.allTypes?allWrong:wrongList().length):last.target==='ai'?pendingAI().length:last.target==='all'?filtered(S.bank).length:poolFor('new',true).length;st.types=keep.types;st.sources=keep.sources;return n})():0;
+  const resume=live?{label:'이어서 풀기',sub:`${TARGETS[S.session.target]} · ${S.session.done}문항 풀이 중`}:(last&&lastLeft)?{label:'이어서 풀기',sub:`${condSummary(Object.assign({},st,last))} · 남은 ${lastLeft}문항`}:null;
+  v.innerHTML=`<div class="card hero"><h2>오늘의 학습</h2>
+    <div class="sub">${graded.length?`오늘 ${todayN}문항 · 전체 정답률 ${Math.round(graded.filter(p=>p.status==='correct').length/graded.length*100)}% (${graded.length}문항 기준) · 푼 기출 ${solvedBank}/${S.bank.length}`:'첫 문제를 풀면 학습 기록이 여기에 표시돼요.'}</div>
+    ${resume?`<button class="btn pri cta" id="hResume">${resume.label} ▶<div class="condsum" style="color:inherit;opacity:.85">${esc(resume.sub)}</div></button>`:''}
+    <div class="tiles">
+      <button class="tile" id="hNew" ${cnt.new||!st.types.length?'':''}><b>기출 문제 풀기</b><span>안 푼 기출 ${poolFor('new',true).length}문항</span></button>
+      <button class="tile" id="hWrong" ${allWrong?'':'disabled'}><b>틀린 문제 복습</b><span>${allWrong?`오답 ${allWrong}문항 · 최신순`:'아직 오답이 없어요'}</span></button>
+      <button class="tile" id="hAI"><b>AI 문제 연습</b><span>${aiLeft?`안 푼 AI 문제 ${aiLeft}개`:st.apiKey?'출제범위에서 만들기':'API 키 필요'}</span></button>
+      <button class="tile" id="hNote"><b>오답노트</b><span>순서 골라 복습</span></button>
+    </div></div>
+  <details class="card cond" id="stDetails" ${S.stOpen?'open':''}><summary><div>학습 조건 설정<div class="condsum">${esc(condSummary(st))}</div></div></summary>
     <label class="f">대상</label><div class="seg" id="stTarget">${Object.entries(TARGETS).map(([k,l])=>`<button data-v="${k}" class="${st.target===k?'on':''}">${l}<small>${k==='ai'?(cnt.ai||(st.apiKey?'생성':'키 필요')):cnt[k]}</small></button>`).join('')}</div>
     <label class="f">유형 <span class="muted">(선택 없음 = 전체)</span></label><div class="seg" id="stTypes"><button data-v="" class="${!st.types.length?'on':''}">전체</button>${types.map(t=>`<button data-v="${t}" class="${st.types.includes(t)?'on':''}" ${typeCnt(t)?'':'disabled'}>${t}<small>${typeCnt(t)}</small></button>`).join('')}</div>
     <label class="f">회차</label><select id="stSrc"><option value="">전체 회차</option>${srcs.map(x=>`<option ${st.sources.length===1&&st.sources[0]===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
@@ -1848,9 +1891,10 @@ function renderStart(){
     <label class="f">문항 수</label><div class="seg" id="stCount">${[[0,'끝까지'],[10,'10문항'],[20,'20문항 (실전 분량)']].map(([n,l])=>`<button data-v="${n}" class="${(+st.count||0)===n?'on':''}">${l}</button>`).join('')}</div>
     <label class="f">풀이 방식</label><div class="seg" id="stMode"><button data-v="0" class="${!st.quick?'on':''}">기본 (풀이 → 채점 → 해설)</button><button data-v="1" class="${st.quick?'on':''}">빠른 확인 (정답 바로)</button></div>
     ${st.target==='ai'?`<div class="row" style="margin-top:8px"><button class="btn sm" id="stGenLink">출제범위에서 AI 문제 만들기 →</button></div>`:''}
-    <p class="muted" style="margin:12px 0 0">조건에 맞는 문제: <b>${avail}</b>${st.target==='new'?' · 다 풀면 AI 응용으로 이어집니다':''}</p>
-    <div class="row"><button class="btn pri" id="stGo" ${(!avail&&!(st.target==='ai'&&st.apiKey))?'disabled':''}>시작 ▶</button></div></div>`;
+    <p class="muted" style="margin:12px 0 0" role="status">조건에 맞는 문제: <b>${avail}</b>${st.target==='new'?' · 다 풀면 AI 응용으로 이어집니다':''}${!avail&&!(st.target==='ai'&&st.apiKey)?' · 조건을 넓혀 주세요':''}${+st.count&&typeof avail==='number'&&avail<+st.count?` · ${st.count}문항보다 적어 ${avail}문항만 풀게 됩니다`:''}</p>
+    <div class="row"><button class="btn pri" id="stGo" ${(!avail&&!(st.target==='ai'&&st.apiKey))?'disabled':''}>이 조건으로 시작 ▶</button></div></details>`;
   const sv=()=>{saveSet();renderStart()};
+  $('#stDetails').ontoggle=e=>{S.stOpen=e.target.open};
   v.querySelectorAll('#stTarget button').forEach(b=>b.onclick=()=>{st.target=b.dataset.v;sv()});
   v.querySelectorAll('#stTypes button').forEach(b=>b.onclick=()=>{const t=b.dataset.v;if(!t)st.types=[];else st.types=st.types.includes(t)?st.types.filter(x=>x!==t):st.types.concat(t);sv()});
   $('#stSrc').onchange=e=>{st.sources=e.target.value?[e.target.value]:[];sv()};
@@ -1858,12 +1902,17 @@ function renderStart(){
   v.querySelectorAll('#stCount button').forEach(b=>b.onclick=()=>{st.count=+b.dataset.v;sv()});
   v.querySelectorAll('#stMode button').forEach(b=>b.onclick=()=>{st.quick=b.dataset.v==='1';sv()});
   $('#stGo').onclick=()=>startSession();
+  const rs=$('#hResume');if(rs)rs.onclick=()=>{if(live){renderSolve();pushSolveState();return}Object.assign(st,{target:last.target,order:last.order,count:last.count,types:last.types||[],sources:last.sources||[],quick:!!last.quick});saveSet();startSession({allTypes:!!last.allTypes})};
+  $('#hNew').onclick=()=>{st.target='new';saveSet();startSession({target:'new'})};
+  $('#hWrong').onclick=()=>startSession({target:'wrong',order:'recent',allTypes:true,count:0});
+  $('#hAI').onclick=()=>{if(aiLeft)startSession({target:'ai',order:'seq',count:0});else{bankTab='ai';show('bank');const c=$('#genCard');if(c)c.scrollIntoView({block:'start'})}};
+  $('#hNote').onclick=()=>show('wrong');
   const gl=$('#stGenLink');if(gl)gl.onclick=()=>{bankTab='ai';show('bank');const c=$('#genCard');if(c)c.scrollIntoView({block:'start'})};
 }
 function mark(q,status,extra={}){
   const p=S.progress[q.id]||{attempts:0,history:[]};
   p.status=status;p.attempts++;p.last=Date.now();p.history=(p.history||[]).slice(-9).concat([{t:Date.now(),s:status}]);Object.assign(p,extra);
-  S.progress[q.id]=p;
+  S.progress[q.id]=p;S.lastStudy=Date.now();
   if(q.restored&&q.origin!=='ai'){const c=S.ai.find(a=>a.from===q.id&&a.body===q.body);if(c)S.progress[c.id]=Object.assign({},p)}
   saveProg();countSession(q,status);renderHeader();
 }
@@ -1878,7 +1927,8 @@ function renderHeader(){
   const acc=all.length?Math.round(all.filter(p=>p.status==='correct').length/all.length*100):null;
   const st=stage();
   $('#stageTxt').innerHTML=!S.bank.length?'기출을 먼저 불러오세요':st===1?`1단계 기출 풀이 <b>${done}/${tot}</b>`:`2단계 AI 응용 · 남은 ${pendingAI().length}${S.generating?' · <span class="spin"></span> 생성 중':''}`;
-  $('#accTxt').textContent=(acc===null?'':`정답률 ${acc}% (${all.length}문항)`)+(S.activeModel&&S.activeModel!==preferredModel()&&blockedUntil()>Date.now()?` · AI: ${S.activeModel.replace('gemini-','')} (자동 전환)`:blockedUntil()>Date.now()?' · AI 한도 대기 중':'');
+  const offline=!navigator.onLine;
+  $('#accTxt').textContent=(offline?'오프라인 · 기출 풀이만 가능 · ':'')+(acc===null?'':`정답률 ${acc}% (${all.length}문항)`)+(S.activeModel&&S.activeModel!==preferredModel()&&blockedUntil()>Date.now()?` · AI: ${S.activeModel.replace('gemini-','')} (자동 전환)`:blockedUntil()>Date.now()?' · AI 한도 대기 중':'');
   $('#barI').style.width=(tot?done/tot*100:0)+'%';
   $('#quickBtn').classList.toggle('on',S.settings.quick);
 }
@@ -1888,7 +1938,7 @@ function qHead(q){return `<div class="badges"><span class="b ${q.origin==='ai'?'
 function kwHtml(q){return q.keywords&&q.keywords.length?`<div class="kw">${q.keywords.map(k=>`<span>${esc(k)}</span>`).join('')}</div>`:'<span class="muted">키워드 없음</span>'}
 
 function renderSolve(err){
-  const v=$('#v-solve');renderHeader();
+  const v=$('#v-solve');document.body.classList.remove('solving');renderHeader();
   if(!S.bank.length){v.innerHTML=`<div class="card empty"><p><b>아직 불러온 기출이 없습니다.</b></p><p class="muted">설정 탭 맨 위 '기출 불러오기'에서 파일을 넣으면<br>이 화면에서 유형·순서를 골라 풀 수 있습니다.</p><div class="row"><button class="btn pri" id="eGo">기출 불러오기로 이동</button></div></div>`;$('#eGo').onclick=()=>goImport();return}
   const q=S.cur;
   if(!q){v.innerHTML=`<div class="card empty">${S.generating?'<p><span class="spin"></span> 기출 패턴을 바탕으로 새 문제를 만드는 중…</p>':!S.settings.apiKey?'<p><b>기출을 모두 풀었습니다.</b></p><p class="muted">2단계(AI 응용 문제)는 설정에서 Gemini API 키를 입력하면 시작됩니다.</p><div class="row"><button class="btn pri" id="goSet">설정으로</button></div>':`<p>${esc(err||'문제가 없습니다.')}</p><div class="row"><button class="btn pri" id="regen">AI 문제 생성</button></div>`}</div>`;
@@ -1897,7 +1947,9 @@ function renderSolve(err){
   const quick=S.settings.quick;
   const ss=S.session;
   const bar=S.reviewBack?`<div class="sesbar"><span>${S.reviewBack==='wrong'?'오답노트에서 다시 풀기':'문제은행에서 선택한 문제'}</span><button class="btn sm" id="sesBack">돌아가기</button></div>`
-    :ss?`<div class="sesbar"><span>${esc(TARGETS[ss.target])}${S.settings.types.length?' · '+esc(S.settings.types.join('/')):''}${{random:' · 랜덤',recent:' · 최신순',often:' · 많이 틀린 순'}[ss.order]||''} · <b>${ss.done+1}${ss.count?'/'+ss.count:''}</b>번째</span><button class="btn sm" id="sesEnd">그만 풀기</button></div>`:'';
+    :ss?(()=>{const total=ss.count||(ss.done+poolFor(ss.target).length);const n=Math.min(ss.done+1,total||ss.done+1);
+      return `<div class="qprog"><span class="num">${n} / ${total||'?'}</span><div class="bar" aria-hidden="true"><i style="width:${total?Math.round(ss.done/total*100):0}%"></i></div><button class="btn sm" id="sesEnd">그만 풀기</button></div>
+      <div class="qmeta">${esc(TARGETS[ss.target])}${S.settings.types.length&&!ss.allTypes?' · '+esc(S.settings.types.join('/')):''}${{random:' · 랜덤',recent:' · 최신순',often:' · 많이 틀린 순'}[ss.order]||''}</div>`})():'';
   const donor=q.summary&&!q.restored?findDonor(q,true):null;
   const canAI=!!S.settings.apiKey;
   const rnote=q.summary?`<div class="muted" style="margin-top:6px">요약 문항입니다.${donor?'':' 버튼을 누를 때만 문제를 만들어 저장합니다.'}</div>${donor?`<details style="margin-top:6px"><summary class="muted" style="cursor:pointer">같은 문제의 저장된 본문 보기 (${esc(donor.source)} ${esc(donor.no)}번)</summary><div class="md">${md(donor.body)}</div></details>`:''}${canAI?'<div class="row" style="margin-top:6px"><button class="btn sm" id="regenQ">AI로 문제 만들기 (요청 1회)</button></div>':''}`
@@ -1906,12 +1958,13 @@ function renderSolve(err){
   v.innerHTML=`<div class="card">${bar}${qHead(q)}<div class="md" id="qBody">${md(q.body)}</div>${rnote}
   ${quick?`<div class="res mid"><div class="verdict v-mid">정답</div><div class="md">${md(q.answer||'_정답 데이터 없음_')}</div>${q.keywords&&q.keywords.length?`<h3 class="sec">키워드</h3>${kwHtml(q)}`:''}</div>
     `
-  :`<div style="margin-top:12px"><textarea id="ans" class="${mono?'mono':''}" placeholder="답 입력  ·  시간 없으면 '바로 정답' 입력" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea></div>
+  :`<label class="ans" for="ans">내 답</label><textarea id="ans" class="${mono?'mono':''}" placeholder="${mono?'출력 결과나 코드를 그대로 입력':'답 입력'}  ·  시간 없으면 '바로 정답'" autocapitalize="off" autocomplete="off" spellcheck="false" aria-describedby="ansHelp"></textarea><div class="muted" id="ansHelp" style="margin-top:4px">빈칸이 여러 개면 ①②… 순서대로 쉼표나 / 로 구분해 쓰세요.</div>
     `}
   </div>
   <div class="sheet hidden" id="sheet"><div class="sh-head" id="shHead"><span class="grip"></span><b id="shTitle">정답 확인</b><span class="muted" id="shToggle">접기 ▼</span></div><div class="sh-body" id="res"></div></div>
   <div class="actbar" id="actbar">${quick?'<button class="btn" id="qConf">헷갈림 → 오답노트</button><button class="btn pri" id="qNext">다음 ▶</button>'
-    :'<button class="btn" id="qSkip">건너뛰기</button><button class="btn" id="qShow">정답 보기</button><button class="btn pri" id="qSub">제출</button>'}</div>`;
+    :'<button class="btn text" id="qSkip">건너뛰기</button><button class="btn" id="qShow">정답 보기</button><button class="btn pri" id="qSub" disabled>제출</button>'}</div>`;
+  document.body.classList.add('solving');
   placeBars();
   hl(v);
   const se=$('#sesEnd');if(se)se.onclick=()=>endSession();
@@ -1924,9 +1977,11 @@ function renderSolve(err){
     $('#qConf').onclick=()=>{mark(q,'wrong',{user:''});toast('오답노트에 추가');afterAnswer()};
     return;
   }
-  const ta=$('#ans');
-  $('#qSub').onclick=()=>submit(ta.value);
-  $('#qShow').onclick=()=>submit('',true);
+  const ta=$('#ans');let sent=false;
+  const qs=$('#qSub');ta.oninput=()=>{qs.disabled=!ta.value.trim()};
+  ta.onfocus=()=>setTimeout(()=>{try{ta.scrollIntoView({block:'center',behavior:'smooth'})}catch(e){}},350);
+  qs.onclick=()=>{if(sent||!ta.value.trim())return;sent=true;ta.readOnly=true;submit(ta.value)};
+  $('#qShow').onclick=()=>{if(sent)return;sent=true;ta.readOnly=true;submit(ta.value&&!QUICK_RE.test(ta.value)?ta.value:'',true)};
   $('#qSkip').onclick=()=>{S.skip.add(q.id);afterAnswer()};
 }
 /* 하단 바·시트 위치를 내비게이션 높이에 맞춰 배치, 본문이 가려지지 않게 여백 확보 */
@@ -1943,13 +1998,14 @@ function afterAnswer(){if(S.reviewBack){const b=S.reviewBack;S.reviewBack=null;S
 
 function submit(user,reveal=false){
   const q=S.cur;
-  if(QUICK_RE.test(user)){S.settings.quick=true;saveSet();toast('빠른 확인 모드 ON — 정답·키워드를 바로 표시합니다');return renderSolve()}
+  if(QUICK_RE.test(user)){S.settings.quick=true;saveSet();const t=$('#ans');if(t)t.readOnly=false;toast('빠른 확인 모드 ON — 정답·키워드를 바로 표시합니다');return renderSolve()}
   const r=$('#res');let g=null;
   if(!reveal&&user.trim()&&isShortAnswer(q))g=autoGrade(q,user);
   const cls=g?(g.verdict==='정답'?'ok':g.verdict==='부분정답'?'mid':'bad'):'';
   const needAI=!reveal&&user.trim()&&!g;
   r.innerHTML=`<div class="res ${cls}">
-    ${g?`<div class="verdict v-${cls}">${g.verdict}${g.verdict==='부분정답'?` (${g.score}%)`:''} <span class="muted">자동 채점</span></div>${g.note?`<div class="muted" style="color:var(--mid)">${esc(g.note)}</div>`:''}`:reveal?'<div class="verdict">정답 확인</div>':'<div class="verdict">채점 대기</div>'}
+    ${g?`<div class="verdict v-${cls}">${{정답:'✓ 정답',부분정답:'△ 부분 정답',오답:'✕ 오답'}[g.verdict]||g.verdict}${g.verdict==='부분정답'?` (${g.score}%)`:''} <span class="muted">자동 채점 · 맞음/틀림을 고른 뒤 다음으로</span></div>${g.note?`<div class="muted" style="color:var(--mid)">${esc(g.note)}</div>`:''}`:reveal?'<div class="verdict">정답 확인</div>':'<div class="verdict">채점 대기</div>'}
+    ${reveal?`<div class="muted" style="margin-bottom:6px">정답 보기로 확인한 문제는 틀림으로 기록돼요. 알고 있었다면 '맞음'을 누르세요.</div>`:''}
     ${user.trim()?`<h3 class="sec">내 답</h3><div class="md"><pre><code class="${q.lang?'language-'+esc(q.lang):''}">${esc(user)}</code></pre></div>`:''}
     <h3 class="sec">정답</h3><div class="md">${md(q.answer||'_정답 데이터 없음 — AI 해설로 확인하세요_')}</div>
     ${q.keywords&&q.keywords.length?`<h3 class="sec">키워드</h3>${kwHtml(q)}`:''}
@@ -1961,16 +2017,17 @@ function submit(user,reveal=false){
   </div>`;
   hl(r);
   const sh=$('#sheet');sh.classList.remove('hidden');
-  $('#shTitle').innerHTML=g?`<span class="v-${cls}">${g.verdict}${g.verdict==='부분정답'?` (${g.score}%)`:''}</span> <span class="muted" style="font-weight:400">· 정답 확인</span>`:reveal?'정답 확인':'채점 대기 · 정답 확인';
+  $('#shTitle').innerHTML=g?`<span class="v-${cls}">${{정답:'✓ 정답',부분정답:'△ 부분 정답',오답:'✕ 오답'}[g.verdict]||g.verdict}${g.verdict==='부분정답'?` (${g.score}%)`:''}</span> <span class="muted" style="font-weight:400">· 정답 확인</span>`:reveal?'정답 확인 <span class="muted" style="font-weight:400">· 틀림으로 기록돼요</span>':'채점 대기 <span class="muted" style="font-weight:400">· 정답과 비교해 맞음/틀림을 고르세요</span>';
   $('#shHead').onclick=()=>setSheet(sh.classList.contains('collapsed'));
-  $('#actbar').innerHTML='<button class="btn" id="mBad">틀림</button><button class="btn" id="mOk">맞음</button><button class="btn pri" id="mNext">다음 ▶</button>';
+  $('#actbar').innerHTML='<div class="judge" role="group" aria-label="결과 확정"><button class="btn" id="mOk" aria-pressed="false">✓ 맞음</button><button class="btn" id="mBad" aria-pressed="false">✕ 틀림</button></div><button class="btn pri" id="mNext">다음 문제 ▶</button>';
   setSheet(true);r.scrollTop=0;
   let status=g?(g.verdict==='정답'?'correct':'wrong'):(reveal?'wrong':null);
   const commit=()=>{if(status)mark(q,status,{user})};
-  const showSel=()=>{$('#mOk').classList.toggle('sel-ok',status==='correct');$('#mBad').classList.toggle('sel-bad',status==='wrong')};showSel();
+  const showSel=()=>{const o=$('#mOk'),b=$('#mBad');if(!o)return;o.classList.toggle('sel-ok',status==='correct');b.classList.toggle('sel-bad',status==='wrong');o.setAttribute('aria-pressed',status==='correct');b.setAttribute('aria-pressed',status==='wrong')};showSel();
   $('#mOk').onclick=()=>{status='correct';showSel();toast('맞음으로 기록')};
   $('#mBad').onclick=()=>{status='wrong';showSel();toast('틀림으로 기록 → 오답노트')};
-  $('#mNext').onclick=()=>{if(!status&&!confirm('채점 결과를 선택하지 않았습니다. 틀림으로 기록할까요?'))return;if(!status)status='wrong';commit();afterAnswer()};
+  let moved=false;
+  $('#mNext').onclick=()=>{if(moved)return;if(!status&&!confirm('맞음/틀림을 고르지 않았습니다. 틀림으로 기록할까요?'))return;if(!status)status='wrong';moved=true;$('#mNext').disabled=true;commit();afterAnswer()};
   const ag=$('#aiGrade');
   if(ag)ag.onclick=async()=>{ag.disabled=true;ag.innerHTML='<span class="spin"></span> 채점 중';
     try{const j=await gemini([{text:`정보처리기사 실기 채점관으로서 수험자 답안을 채점하라. 실제 시험처럼 주요 용어·결과값이 정확한지 엄격히 본다. 코드/SQL은 문법 오류와 결과 일치 여부를 확인한다.
@@ -2009,12 +2066,14 @@ function renderWrong(){
   else if(ord==='often')list.sort((a,b)=>wrongCount(b)-wrongCount(a)||byLast(a,b));
   else list.sort(byLast);
   const v=$('#v-wrong');
-  v.innerHTML=`<div class="card"><b>오답 ${list.length}문항</b>
+  if(!list.length){v.innerHTML=`<div class="card empty-state"><b>아직 오답이 없어요.</b>기출 문제를 풀어보세요. 틀린 문제는 여기에 모입니다.<div class="row"><button class="btn pri" id="wGo">기출 문제 풀기</button></div></div>`;$('#wGo').onclick=()=>{show('solve',true);startSession({target:'new'})};return}
+  v.innerHTML=`<div class="card"><b>복습할 오답 ${list.length}문항</b>
     ${list.length?`<label class="f">다시 푸는 순서</label><div class="seg" id="wOrder">${Object.entries(L).map(([k,l])=>`<button data-v="${k}" class="${ord===k?'on':''}">${l}</button>`).join('')}</div>
-    <div class="row"><button class="btn pri" id="wAll">${L[ord]}으로 다시 풀기 ▶</button></div>`:''}
-  <div class="list">${list.map(q=>`<div class="it"><div class="t"><div><b>${esc(q.source)}${q.no?' '+esc(q.no)+'번':''}</b> · ${esc(q.type)}${wrongCount(q)>1?` · <span style="color:var(--bad)">${wrongCount(q)}회 틀림</span>`:''}</div><div class="muted">${esc(stripMd(q.body).slice(0,80))} · ${fmtD(S.progress[q.id].last)}</div></div><button class="btn sm" data-r="${q.id}">다시</button></div>`).join('')||'<div class="empty">틀린 문제가 없습니다.</div>'}</div></div>`;
+    ${ord==='random'?'<p class="muted" style="margin:6px 0 0">랜덤은 다시 풀 때마다 순서가 새로 섞이고, 목록은 최신순으로 보입니다.</p>':''}${ord==='often'?'<p class="muted" style="margin:6px 0 0">틀린 횟수가 많은 순, 같으면 최근에 틀린 순입니다.</p>':''}
+    <div class="row"><button class="btn pri" id="wAll">${L[ord]}으로 전체 다시 풀기 ▶</button></div>`:''}
+  <div class="list">${list.map(q=>`<div class="it"><div class="t"><div><b>${esc(q.source)}${q.no?' '+esc(q.no)+'번':''}</b> · ${esc(q.type)}${wrongCount(q)>1?` · <span style="color:var(--bad)">${wrongCount(q)}회 틀림</span>`:''}</div><div class="muted">${esc(stripMd(q.body).slice(0,80))} · ${fmtD(S.progress[q.id].last)}</div></div><button class="btn sm pri" data-r="${q.id}" aria-label="${esc(q.source)} ${esc(q.no)}번 다시 풀기">다시 풀기</button></div>`).join('')||'<div class="empty">틀린 문제가 없습니다.</div>'}</div></div>`;
   v.querySelectorAll('#wOrder button').forEach(b=>b.onclick=()=>{S.settings.wrongOrder=b.dataset.v;saveSet();renderWrong()});
-  v.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.r);S.reviewId=S.cur.id;S.reviewBack='wrong';show('solve',true);renderSolve()});
+  v.querySelectorAll('[data-r]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.r);S.reviewId=S.cur.id;S.reviewBack='wrong';show('solve',true);renderSolve();pushSolveState()});
   const w=$('#wAll');if(w)w.onclick=()=>{show('solve',true);startSession({target:'wrong',order:ord,allTypes:true,count:0})};
 }
 
@@ -2041,7 +2100,7 @@ function renderBank(){
   bindSeg();
   $('#bFile').onchange=e=>{bankFile=e.target.value==='__all'?null:rows[+e.target.value].k;renderBank()};
   const si=$('#bSearch');si.oninput=()=>{bankQ=si.value;clearTimeout(si._t);si._t=setTimeout(()=>{renderBank();const n=$('#bSearch');n.focus();n.setSelectionRange(n.value.length,n.value.length)},350)};
-  v.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.o);S.reviewId=S.cur.id;S.reviewBack='bank';show('solve',true);renderSolve()});
+  v.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.o);S.reviewId=S.cur.id;S.reviewBack='bank';show('solve',true);renderSolve();pushSolveState()});
 }
 function bankSeg(){return `<div class="seg" id="bankSeg" style="margin-bottom:12px"><button data-v="bank" class="${bankTab==='bank'?'on':''}">기출<small>${S.bank.length}</small></button><button data-v="ai" class="${bankTab==='ai'?'on':''}">AI 생성 문제<small>${S.ai.length}</small></button></div>`}
 function bindSeg(){document.querySelectorAll('#bankSeg button').forEach(b=>b.onclick=()=>{bankTab=b.dataset.v;renderBank()})}
@@ -2088,7 +2147,7 @@ function renderAIBank(){
   const gso=$('#gSolve');if(gso)gso.onclick=()=>{const ids=new Set(gso.dataset.ids.split(','));S.genResult='';show('solve',true);startSession({target:'ai',only:ids,order:'seq',count:0})};
   v.querySelectorAll('#aiKind button').forEach(b=>b.onclick=()=>{aiKind=b.dataset.v;renderBank()});
   const si=$('#bSearch');si.oninput=()=>{bankQ=si.value;clearTimeout(si._t);si._t=setTimeout(()=>{renderBank();const n=$('#bSearch');n.focus();n.setSelectionRange(n.value.length,n.value.length)},350)};
-  v.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.o);S.reviewId=S.cur.id;S.reviewBack='bank';show('solve',true);renderSolve()});
+  v.querySelectorAll('[data-o]').forEach(b=>b.onclick=()=>{S.cur=findQ(b.dataset.o);S.reviewId=S.cur.id;S.reviewBack='bank';show('solve',true);renderSolve();pushSolveState()});
   v.querySelectorAll('[data-x]').forEach(b=>b.onclick=async()=>{if(!confirm('이 생성 문제를 삭제할까요? (원래 기출 문항은 그대로)'))return;const id=b.dataset.x;S.ai=S.ai.filter(q=>q.id!==id);delete S.progress[id];if(S.cur&&S.cur.id===id)S.cur=null;await saveAI();await saveProg();renderBank();renderHeader()});
 }
 function goImport(){show('set');const c=$('#impCard');if(c)c.scrollIntoView({block:'start'})}
@@ -2334,7 +2393,9 @@ function importSummary(before,boxSel){
   const added=S.bank.length-before;
   const dupOnly=added===0&&S.importLog.some(m=>m.includes('이미 있는 문항'))&&!S.importLog.some(m=>m.includes('✕'));
   if(dupOnly){S.importSum=`<div class="res" style="margin-top:10px"><div class="verdict">새로 추가된 문항 없음</div><div class="muted">이미 불러온 문항과 같아서 건너뛰었습니다. 문제은행 전체 ${S.bank.length}문항</div></div>`;const bx=$(boxSel);if(bx)bx.innerHTML=S.importSum;toast('이미 불러온 문항입니다',3000);renderHeader();return}
-  const html=`<div class="res ${added>0?'ok':'bad'}" style="margin-top:10px"><div class="verdict ${added>0?'v-ok':'v-bad'}">${added>0?`✓ ${added}문항 추가됨`:'추가된 문항 없음'}</div>
+  const fails=S.importLog.filter(m=>m.includes('✕')).length;
+  const kind=added>0?(fails?'부분 성공':'성공'):'실패';
+  const html=`<div class="res ${added>0?(fails?'mid':'ok'):'bad'}" style="margin-top:10px" role="status"><div class="verdict ${added>0?(fails?'v-mid':'v-ok'):'v-bad'}">${kind}: ${added>0?`${added}문항 추가`:'추가된 문항 없음'}${fails?` · 실패 ${fails}건`:''}</div>
     <div class="muted">문제은행 전체 ${S.bank.length}문항 · 아직 안 푼 기출 ${pendingBank().length}문항</div>
     ${added>0?'<div class="row"><button class="btn pri" data-go-solve>바로 풀기 ▶</button></div>':'<div class="muted">위 로그의 ✕ 사유를 확인하세요. md 형식을 인식하지 못했다면 아래 Gemini API 키를 넣고 다시 불러오면 AI가 문제를 나눠 줍니다.</div>'}</div>`;
   S.importSum=html;
@@ -2512,14 +2573,19 @@ function show(view,keep){
   S.view=view;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===view));
   ['solve','wrong','bank','set'].forEach(x=>$('#v-'+x).classList.toggle('hidden',x!==view));
   if(view==='solve'&&!keep){if(!S.session&&!S.reviewBack)renderStart();else if(!S.cur||S.progress[S.cur.id]&&!S.reviewId)nextQuestion();else renderSolve()}
-  if(view!=='solve')document.querySelector('main').style.paddingBottom='';
+  if(view!=='solve'){document.querySelector('main').style.paddingBottom='';document.body.classList.remove('solving')}
   if(view==='wrong')renderWrong();if(view==='bank')renderBank();if(view==='set')renderSet();
   window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>show(b.dataset.v));
 $('#quickBtn').onclick=()=>{S.settings.quick=!S.settings.quick;saveSet();toast(S.settings.quick?'빠른 확인 모드 ON':'기본 모드 (풀이 → 채점 → 해설)');if(S.view==='solve'){if(S.cur)renderSolve();else if(!S.session)renderStart()}renderHeader()};
-window.addEventListener('popstate',()=>{});
-window.onAndroidBack=()=>{if(S.view!=='solve'){show('solve');return true}return false};
+window.addEventListener('online',()=>{renderHeader();toast('온라인으로 돌아왔습니다')});
+window.addEventListener('offline',()=>{renderHeader();toast('오프라인입니다. 기출 풀이와 자동 채점은 계속 됩니다',3500)});
+/* 풀이 중 뒤로 가기: 앱을 나가지 않고 풀이를 끝내거나 이전 화면으로 */
+function pushSolveState(){try{if(!history.state||!history.state.solving)history.pushState({solving:1},'')}catch(e){}}
+function leaveSolving(){if(S.reviewBack){afterAnswer();return true}if(S.session){endSession();return true}return false}
+window.addEventListener('popstate',()=>{if(document.body.classList.contains('solving'))leaveSolving()});
+window.onAndroidBack=()=>{if(document.body.classList.contains('solving'))return leaveSolving();if(S.view!=='solve'){show('solve');return true}return false};
 
 (async()=>{await load();applyTheme();show('solve');autoSync().catch(()=>{})})();
 if('serviceWorker' in navigator&&location.hostname!=='appassets.androidplatform.net'&&(location.protocol==='https:'||location.hostname==='localhost')){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!window.__reloaded){window.__reloaded=true;location.reload()}})}
