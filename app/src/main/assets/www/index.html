@@ -1879,9 +1879,12 @@ ${QSCHEMA}`}],{temperature:0.9,maxTokens:32768,what:`범위 생성 · ${label}`}
 }
 
 /* ================= 출제 로직 ================= */
-function filtered(arr){const t=S.settings.types,s=S.settings.sources;return arr.filter(q=>(!t.length||t.includes(q.type))&&(!s.length||s.includes(q.source)))}
+const LANGS=['C','Java','Python'];
+function langOf(q){const l=String(q.lang||'').toLowerCase(),t=String(q.topic||'');if(l==='java'||/java/i.test(t))return 'Java';if(l==='python'||/python/i.test(t))return 'Python';if(l==='c'||/\(C\)|\bC언어/.test(t))return 'C';return ''}
+function langOk(q){const L=S.settings.langs||[];if(!L.length)return true;const l=langOf(q);return l?L.includes(l):q.type!=='코드'} // 언어 선택은 프로그래밍 문항에만 적용, 언어를 모르는 코드 문항은 제외
+function filtered(arr){const t=S.settings.types,s=S.settings.sources;return arr.filter(q=>(!t.length||t.includes(q.type))&&(!s.length||s.includes(q.source))&&langOk(q))}
 function pendingBank(){return filtered(S.bank).filter(q=>!S.progress[q.id])}
-function pendingAI(){return S.ai.filter(q=>!S.progress[q.id]&&(!S.settings.types.length||S.settings.types.includes(q.type)))}
+function pendingAI(){return S.ai.filter(q=>!S.progress[q.id]&&langOk(q)&&(!S.settings.types.length||S.settings.types.includes(q.type)))}
 function stage(){return pendingBank().length?1:2}
 /* ---- 풀이 세션: 시작 화면에서 고른 조건으로 출제 ---- */
 const TARGETS={new:'안 푼 기출',wrong:'틀린 문제',all:'전체 복습',ai:'AI 생성 문제',concept:'개념 퀴즈',list:'선택한 문제'};
@@ -1903,7 +1906,7 @@ function startSession(o={}){
   const st=S.settings;
   S.session=Object.assign({target:st.target||'new',count:+st.count||0,order:st.order,done:0,ok:0,bad:0,quick:0,seen:new Set(),wrongIds:[],startTarget:st.target||'new'},o);
   if(o.target)S.session.startTarget=o.target;
-  if(!o.only){S.settings.lastSession={target:S.session.target,order:S.session.order,count:S.session.count,allTypes:!!S.session.allTypes,types:st.types.slice(),sources:st.sources.slice(),quick:!!st.quick,at:Date.now()};saveSet()}
+  if(!o.only){S.settings.lastSession={target:S.session.target,order:S.session.order,count:S.session.count,allTypes:!!S.session.allTypes,types:st.types.slice(),sources:st.sources.slice(),langs:(st.langs||[]).slice(),quick:!!st.quick,at:Date.now()};saveSet()}
   pushSolveState();
   S.skip.clear();S.cur=null;S.reviewId=null;nextQuestion();
 }
@@ -1955,7 +1958,7 @@ function renderDone(){
 }
 function condSummary(st){
   const ord={seq:'순서대로',random:'랜덤'}[st.order]||'순서대로';
-  return [TARGETS[st.target]||'안 푼 기출',st.types.length?st.types.join('/'):'전체 유형',st.sources.length?st.sources[0]:'전체 회차',ord,+st.count?`${st.count}문항`:'끝까지',st.quick?'빠른 확인':'기본 풀이',(st.summaryMode||'last')==='last'?'':'요약 문항 '+SUMMARY_MODES[st.summaryMode]].filter(Boolean).join(' · ');
+  return [TARGETS[st.target]||'안 푼 기출',st.types.length?st.types.join('/'):'전체 유형',(st.langs||[]).length?st.langs.join('/'):'',st.sources.length?st.sources[0]:'전체 회차',ord,+st.count?`${st.count}문항`:'끝까지',st.quick?'빠른 확인':'기본 풀이',(st.summaryMode||'last')==='last'?'':'요약 문항 '+SUMMARY_MODES[st.summaryMode]].filter(Boolean).join(' · ');
 }
 function renderStart(){
   const v=$('#v-solve'),st=S.settings;document.body.classList.remove('solving');renderHeader();
@@ -1972,7 +1975,7 @@ function renderStart(){
   // 이어서 풀기: 진행 중인 풀이 → 지난 조건 → 없으면 기출 풀기
   const live=S.session&&S.cur&&!S.progress[S.cur.id];
   const last=st.lastSession;
-  const lastLeft=last?(()=>{const keep={types:st.types,sources:st.sources};st.types=last.types||[];st.sources=last.sources||[];const n=last.target==='wrong'?(last.allTypes?allWrong:wrongList().length):last.target==='ai'?pendingAI().length:last.target==='all'?filtered(S.bank).length:poolFor('new',true).length;st.types=keep.types;st.sources=keep.sources;return n})():0;
+  const lastLeft=last?(()=>{const keep={types:st.types,sources:st.sources,langs:st.langs};st.types=last.types||[];st.sources=last.sources||[];st.langs=last.langs||[];const n=last.target==='wrong'?(last.allTypes?allWrong:wrongList().length):last.target==='ai'?pendingAI().length:last.target==='all'?filtered(S.bank).length:poolFor('new',true).length;st.types=keep.types;st.sources=keep.sources;st.langs=keep.langs;return n})():0;
   const resume=live?{label:'이어서 풀기',sub:`${TARGETS[S.session.target]} · ${S.session.done}문항 풀이 중`}:(last&&lastLeft)?{label:'이어서 풀기',sub:`${condSummary(Object.assign({},st,last))} · 남은 ${lastLeft}문항`}:null;
   v.innerHTML=`<div class="card hero"><div class="hero-top"><div><h2>오늘의 <em>학습</em></h2>
     <div class="sub">${graded.length?`오늘 ${todayN}문항 · 전체 정답률 ${Math.round(graded.filter(p=>p.status==='correct').length/graded.length*100)}% (${graded.length}문항 기준) · 푼 기출 ${solvedBank}/${S.bank.length}`:'첫 문제를 풀면 학습 기록이 여기에 표시돼요.'}</div></div>${cat('read','hero-cat')}</div>
@@ -1984,8 +1987,9 @@ function renderStart(){
       <button class="tile" id="hNote"><b>개념 학습</b><span>${(n=>n?`오늘 복습 ${n}장`:`개념 ${concepts().length}개 · 카드·퀴즈`)(concepts().filter(c=>isDue(c.id)).length)}</span></button>
     </div></div>
   <details class="card cond" id="stDetails" ${S.stOpen?'open':''}><summary><div>학습 조건 설정<div class="condsum">${esc(condSummary(st))}</div></div></summary>
-    <label class="f">대상</label><div class="seg" id="stTarget">${Object.entries(TARGETS).map(([k,l])=>`<button data-v="${k}" class="${st.target===k?'on':''}">${l}<small>${k==='ai'?(cnt.ai||(st.apiKey?'생성':'키 필요')):cnt[k]}</small></button>`).join('')}</div>
+    <label class="f">대상</label><div class="seg" id="stTarget">${Object.entries(TARGETS).filter(([k])=>['new','wrong','all','ai'].includes(k)).map(([k,l])=>`<button data-v="${k}" class="${st.target===k?'on':''}">${l}<small>${k==='ai'?(cnt.ai||(st.apiKey?'생성':'키 필요')):cnt[k]}</small></button>`).join('')}</div>
     <label class="f">유형 <span class="muted">(선택 없음 = 전체)</span></label><div class="seg" id="stTypes"><button data-v="" class="${!st.types.length?'on':''}">전체</button>${types.map(t=>`<button data-v="${t}" class="${st.types.includes(t)?'on':''}" ${typeCnt(t)?'':'disabled'}>${t}<small>${typeCnt(t)}</small></button>`).join('')}</div>
+    <label class="f">코드 언어 <span class="muted">(선택 없음 = 전체 · 코드 문항에만 적용)</span></label><div class="seg" id="stLang"><button data-v="" class="${!(st.langs||[]).length?'on':''}">전체</button>${LANGS.map(l=>{const n=S.bank.filter(q=>q.type==='코드'&&langOf(q)===l&&(!st.sources.length||st.sources.includes(q.source))).length;return `<button data-v="${l}" class="${(st.langs||[]).includes(l)?'on':''}" ${n?'':'disabled'}>${l}<small>${n}</small></button>`}).join('')}</div>
     <label class="f">회차</label><select id="stSrc"><option value="">전체 회차</option>${srcs.map(x=>`<option ${st.sources.length===1&&st.sources[0]===x?'selected':''}>${esc(x)}</option>`).join('')}</select>
     <label class="f">순서</label><div class="seg" id="stOrder"><button data-v="seq" class="${st.order!=='random'?'on':''}">순서대로</button><button data-v="random" class="${st.order==='random'?'on':''}">랜덤</button></div>
     <label class="f">문항 수</label><div class="seg" id="stCount">${[[0,'끝까지'],[10,'10문항'],[20,'20문항 (실전 분량)']].map(([n,l])=>`<button data-v="${n}" class="${(+st.count||0)===n?'on':''}">${l}</button>`).join('')}</div>
@@ -2001,10 +2005,12 @@ function renderStart(){
   $('#stSrc').onchange=e=>{st.sources=e.target.value?[e.target.value]:[];sv()};
   v.querySelectorAll('#stOrder button').forEach(b=>b.onclick=()=>{st.order=b.dataset.v;sv()});
   v.querySelectorAll('#stCount button').forEach(b=>b.onclick=()=>{st.count=+b.dataset.v;sv()});
+  v.querySelectorAll('#stLang button').forEach(b=>b.onclick=()=>{const l=b.dataset.v,L=st.langs||[];
+    if(!l)st.langs=[];else{st.langs=L.includes(l)?L.filter(x=>x!==l):L.concat(l);if(st.langs.length&&!st.types.length){st.types=['코드'];toast('유형을 코드로 맞췄어요. 다른 유형도 함께 풀려면 유형에서 더 고르세요')}}sv()});
   v.querySelectorAll('#stSum button').forEach(b=>b.onclick=()=>{st.summaryMode=b.dataset.v;sv()});
   v.querySelectorAll('#stMode button').forEach(b=>b.onclick=()=>{st.quick=b.dataset.v==='1';sv()});
   $('#stGo').onclick=()=>startSession();
-  const rs=$('#hResume');if(rs)rs.onclick=()=>{if(live){renderSolve();pushSolveState();return}Object.assign(st,{target:last.target,order:last.order,count:last.count,types:last.types||[],sources:last.sources||[],quick:!!last.quick});saveSet();startSession({allTypes:!!last.allTypes})};
+  const rs=$('#hResume');if(rs)rs.onclick=()=>{if(live){renderSolve();pushSolveState();return}Object.assign(st,{target:last.target,order:last.order,count:last.count,types:last.types||[],sources:last.sources||[],langs:last.langs||[],quick:!!last.quick});saveSet();startSession({allTypes:!!last.allTypes})};
   $('#hNew').onclick=()=>{st.target='new';saveSet();startSession({target:'new'})};
   $('#hWrong').onclick=()=>startSession({target:'wrong',order:'recent',allTypes:true,count:0});
   $('#hAI').onclick=()=>{if(aiLeft)startSession({target:'ai',order:'seq',count:0});else{bankTab='ai';show('bank');const c=$('#genCard');if(c)c.scrollIntoView({block:'start'})}};
