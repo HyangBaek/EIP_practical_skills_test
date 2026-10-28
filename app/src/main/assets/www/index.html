@@ -186,6 +186,13 @@ details.cgroup>summary:after{content:'▾';margin-left:auto;color:var(--muted)}d
 .fc-q{font-size:17px;line-height:1.75}.fc-t{font-family:"Jua",sans-serif;font-size:24px;color:var(--pri)}
 .fc-hint{position:absolute;bottom:8px;right:12px;font-size:12px;color:var(--muted)}
 .linkbtn{background:none;border:0;color:var(--pri);font:inherit;font-size:12.5px;text-decoration:underline;padding:0;cursor:pointer}
+
+/* 카드 앞뒤 뒤집기(3D) — 두 면을 겹쳐 두고 누를 때마다 회전 */
+.fc3d{display:grid;perspective:1200px;cursor:pointer;-webkit-tap-highlight-color:transparent;outline-offset:4px}
+.fc3d>.fc{grid-area:1/1;padding-bottom:34px;backface-visibility:hidden;-webkit-backface-visibility:hidden;transition:transform .45s cubic-bezier(.3,.7,.3,1);cursor:pointer}
+.fc3d>.fc-back{transform:rotateY(180deg);justify-content:flex-start;border-style:solid}
+.fc3d.flipped>.fc-front{transform:rotateY(-180deg)}.fc3d.flipped>.fc-back{transform:rotateY(0)}
+@media (prefers-reduced-motion:reduce){.fc3d>.fc{transition:none}}
 </style>
 </head>
 <body>
@@ -1467,7 +1474,7 @@ async function load(){
   if(!S.settings.model||S.settings.model==='gemini-2.5-flash'){S.settings.model=DEFAULT_MODEL;await saveSet()}
   if(!S.settings.loaded)S.settings.loaded={};if(!S.settings.excluded)S.settings.excluded={};
 }
-const saveFiles=()=>DB.set('files',S.files), saveBank=()=>DB.set('bank',S.bank), saveAI=()=>DB.set('ai',S.ai), saveProg=()=>DB.set('progress',S.progress), saveSet=()=>DB.set('settings',S.settings), saveStudy=()=>DB.set('study',S.study);
+const saveFiles=()=>DB.set('files',S.files), saveBank=()=>{try{resetConceptCache()}catch(e){}return DB.set('bank',S.bank)}, saveAI=()=>DB.set('ai',S.ai), saveProg=()=>DB.set('progress',S.progress), saveSet=()=>DB.set('settings',S.settings), saveStudy=()=>DB.set('study',S.study);
 
 /* ================= 유틸 ================= */
 const $=s=>document.querySelector(s);
@@ -2675,14 +2682,21 @@ const SCOPE_NAMES={1:'요구사항 확인',2:'데이터 입출력 구현',3:'통
 const BOX_DAYS=[0,1,2,4,8,16]; // 상자 1~5: '알아요'를 누를 때마다 한 칸 올라가고 다음 복습까지 일수가 늘어남
 let _concepts=null,_cqs=null,_freq=null;
 function concepts(){if(!_concepts)_concepts=CONCEPTS_BASE.concat((S.conceptsAI||[]).map(c=>Object.assign({ai:true},c)));return _concepts}
-function resetConceptCache(){_concepts=_cqs=_freq=null}
+function resetConceptCache(){_concepts=_cqs=_freq=_rel=null}
 function findConcept(id){return concepts().find(c=>c.id===id)}
 const cnorm=s=>String(s||'').toLowerCase().replace(/[\s\-_·()（）\/.,]/g,'');
 function conceptNames(c){const a=[c.t].concat(c.en||[]);return [...new Set(a.concat(a.map(x=>x.replace(/\(.*?\)/g,'').trim())).filter(x=>cnorm(x).length>=2))]}
-// 기출 출제 횟수: 정답·키워드·본문에 용어가 나온 기출 문항 수
-function conceptFreq(){if(_freq)return _freq;_freq={};const qs=S.bank.map(q=>cnorm(q.answer)+'|'+cnorm((q.keywords||[]).join(','))+'|'+cnorm(q.body).slice(0,400));
-  for(const c of concepts()){const ns=conceptNames(c).map(cnorm).filter(n=>n.length>=2);_freq[c.id]=qs.filter(s=>ns.some(n=>s.includes(n))).length}return _freq}
-function bankFor(c){const ns=conceptNames(c).map(cnorm).filter(n=>n.length>=2);return S.bank.filter(q=>{const s=cnorm(q.answer)+'|'+cnorm((q.keywords||[]).join(','));return ns.some(n=>s.includes(n))})}
+// 개념 ↔ 기출 연결: 배지 숫자와 '기출 N'을 눌렀을 때 나오는 문항이 같은 함수(relatedMap)를 쓴다
+// 기준: 정답·키워드(요약 문항은 본문 첫 줄 포함)를 항목 단위로 나눠, 개념 용어와 같은 항목이 있는 기출만 연결
+function bankItems(q){const first=q.summary?String(q.body||'').split('\n')[0]:'';
+  return [q.answer,...(q.keywords||[]),first].join('\n').split(/[\/,，\n①-⑳()（）:：→=]|또는|\s-\s/).map(x=>cnorm(x.replace(/^\s*(\d+\s*[.)]|[ㄱ-ㅎ]\s*[.:)]|[A-Z]\s*[.:])\s*/,''))).filter(x=>x.length>=2)}
+const LINK_SUFFIX=['패턴','pattern','기법','도구','방식','방법','테스트','test','검사','공격','attack','알고리즘','모델','기술','개념','개념서술','서술'];
+function itemHit(n,item){if(item===n)return true;return item.startsWith(n)&&LINK_SUFFIX.includes(item.slice(n.length))}
+let _rel=null;
+function relatedMap(){if(_rel)return _rel;_rel={};const idx=S.bank.map(q=>[q,bankItems(q)]);
+  for(const c of concepts()){const ns=conceptNames(c).map(cnorm).filter(n=>n.length>=2);_rel[c.id]=idx.filter(([,its])=>its.some(it=>ns.some(n=>itemHit(n,it)))).map(([q])=>q.id)}return _rel}
+function conceptFreq(){if(_freq)return _freq;const r=relatedMap();_freq={};for(const id in r)_freq[id]=r[id].length;return _freq}
+function bankFor(c){const ids=new Set(relatedMap()[c.id]||[]);return S.bank.filter(q=>ids.has(q.id))}
 function stOf(id){return S.study[id]||null}
 function isDue(id,now=Date.now()){const s=stOf(id);return !!s&&s.next<=now}
 function mastered(id){const s=stOf(id);return !!s&&s.box>=3}
@@ -2763,13 +2777,18 @@ function renderCards(){
   const back=`<div class="fc-t">${esc(c.t)}</div>${c.en.length?`<div class="en">${esc(c.en.join(' · '))}</div>`:''}<div class="cd">${esc(c.d)}</div>${c.k.length?`<div class="kw">${c.k.map(k=>`<span>${esc(k)}</span>`).join('')}</div>`:''}${c.p?`<div class="cp">${esc(c.p)}</div>`:''}`;
   v.innerHTML=`<div class="card fcard"><div class="qprog"><span class="num">${cd.i+1} / ${cd.ids.length}</span><div class="bar" aria-hidden="true"><i style="width:${Math.round(cd.i/cd.ids.length*100)}%"></i></div><button class="btn sm" id="cdEnd">그만</button></div>
     <div class="qmeta">${esc(cd.label)} · 앞면 <button class="linkbtn" id="cdFront">${descFront?'설명 → 용어':'용어 → 설명'}</button></div>
-    <div class="fc ${cd.flip?'flipped':''}" id="fc" role="button" tabindex="0" aria-label="카드 뒤집기">${cd.flip?back:front}${cd.flip?'':'<div class="fc-hint">눌러서 뒤집기</div>'}</div></div>
-  <div class="actbar" id="cardbar">${cd.flip?'<button class="btn" id="cAgain">✕ 몰라요</button><button class="btn" id="cUnsure">△ 애매해요</button><button class="btn pri" id="cKnow">✓ 알아요</button>':'<button class="btn pri" id="cFlip">정답 보기</button>'}</div>`;
+    <div class="fc3d ${cd.flip?'flipped':''}" id="fc" role="button" tabindex="0" aria-pressed="${cd.flip}" aria-label="카드 뒤집기 (앞뒤로 계속 뒤집을 수 있어요)"><div class="fc fc-front" aria-hidden="${cd.flip}">${front}<div class="fc-hint">눌러서 뒤집기 ↻</div></div><div class="fc fc-back flipped" aria-hidden="${!cd.flip}">${back}<div class="fc-hint">눌러서 앞면 ↻</div></div></div></div>
+  <div class="actbar" id="cardbar"></div>`;
   placeBars();
-  const flip=()=>{cd.flip=true;renderCards()};$('#fc').onclick=()=>{if(!cd.flip)flip()};$('#fc').onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&!cd.flip){e.preventDefault();flip()}};
-  const f=$('#cFlip');if(f)f.onclick=flip;
-  let moved=false;const go=res=>{if(moved)return;moved=true;studyMark(c.id,res);cd.res[res]++;if(res!=='know'){cd.miss=cd.miss||new Set();cd.miss.add(c.id)}cd.i++;cd.flip=false;renderCards();window.scrollTo(0,0)};
-  [['cAgain','again'],['cUnsure','unsure'],['cKnow','know']].forEach(([id,r])=>{const b=$('#'+id);if(b)b.onclick=()=>go(r)});
+  // 카드는 몇 번이든 앞뒤로 뒤집을 수 있고, 한 번 뒤집어 본 뒤에는 판정 버튼이 계속 보인다
+  const bar=()=>{$('#cardbar').innerHTML=cd.seen?'<button class="btn" id="cAgain">✕ 몰라요</button><button class="btn" id="cUnsure">△ 애매해요</button><button class="btn pri" id="cKnow">✓ 알아요</button>':'<button class="btn pri" id="cFlip">정답 보기</button>';
+    const f=$('#cFlip');if(f)f.onclick=flip;[['cAgain','again'],['cUnsure','unsure'],['cKnow','know']].forEach(([id,r])=>{const b=$('#'+id);if(b)b.onclick=()=>go(r)});placeBars()};
+  const flip=()=>{cd.flip=!cd.flip;const el=$('#fc');el.classList.toggle('flipped',cd.flip);el.setAttribute('aria-pressed',cd.flip);el.children[0].setAttribute('aria-hidden',cd.flip);el.children[1].setAttribute('aria-hidden',!cd.flip);if(cd.flip&&!cd.seen){cd.seen=true;bar()}};
+  $('#fc').onclick=flip;$('#fc').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip()}};
+
+  let moved=false;const go=res=>{if(moved)return;moved=true;studyMark(c.id,res);cd.res[res]++;if(res!=='know'){cd.miss=cd.miss||new Set();cd.miss.add(c.id)}cd.i++;cd.flip=false;cd.seen=false;renderCards();window.scrollTo(0,0)};
+  bar();
+
   $('#cdEnd').onclick=()=>{cd.ids=cd.ids.slice(0,cd.i);renderCards()};
   $('#cdFront').onclick=e=>{e.stopPropagation();cd.front=descFront?'term':'desc';S.settings.cardFront=cd.front;saveSet();renderCards()};
 }
@@ -2912,7 +2931,7 @@ window.onAndroidBack=()=>{if(document.body.classList.contains('solving'))return 
 
 (async()=>{await load();applyTheme();show('solve');autoSync().catch(()=>{})})();
 if('serviceWorker' in navigator&&location.hostname!=='appassets.androidplatform.net'&&(location.protocol==='https:'||location.hostname==='localhost')){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js').then(r=>r.update()).catch(()=>{});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!window.__reloaded){window.__reloaded=true;location.reload()}})}
-window.blankItems=blankItems;window.$=$;window.__jcg={concepts,conceptQs,study:()=>study,subjectOf,scopeItems,md,convertTex,splitKw,expandKw,parseMarkdown,autoGrade,detectType,normalizeJson,S};
+window.blankItems=blankItems;window.$=$;window.__jcg={concepts,conceptQs,conceptFreq,bankFor,study:()=>study,subjectOf,scopeItems,md,convertTex,splitKw,expandKw,parseMarkdown,autoGrade,detectType,normalizeJson,S};
 </script>
 </body>
 </html>
