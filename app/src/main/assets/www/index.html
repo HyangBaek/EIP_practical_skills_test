@@ -193,6 +193,8 @@ details.cgroup>summary:after{content:'▾';margin-left:auto;color:var(--muted)}d
 .fc3d>.fc-back{transform:rotateY(180deg);justify-content:flex-start;border-style:solid}
 .fc3d.flipped>.fc-front{transform:rotateY(-180deg)}.fc3d.flipped>.fc-back{transform:rotateY(0)}
 @media (prefers-reduced-motion:reduce){.fc3d>.fc{transition:none}}
+
+#cardbar{gap:6px}#cardbar .btn{white-space:nowrap;padding:8px 4px;font-size:14.5px}#cardbar .btn.text{padding:8px 6px}
 </style>
 </head>
 <body>
@@ -2764,14 +2766,14 @@ function renderScope(){
 function startConceptQuiz(cs,label){const ids=new Set(cs.map(c=>'cq_'+c.id));if(!ids.size)return toast('개념이 없어요');
   startSession({target:'concept',only:ids,order:'random',count:Math.min(20,ids.size),label:'개념 퀴즈 · '+label});show('solve',true)}
 // ---- 카드 암기 ----
-function startCards(ids,label){if(!ids.length)return toast('복습할 카드가 없어요');study.card={ids,i:0,flip:false,label,res:{know:0,unsure:0,again:0},front:S.settings.cardFront||'desc'};study.view='cards';show('study');}
+function startCards(ids,label){if(!ids.length)return toast('복습할 카드가 없어요');study.card={ids,i:0,flip:false,label,res:{know:0,unsure:0,again:0,skip:0},skipped:new Set(),front:S.settings.cardFront||'desc'};study.view='cards';show('study');}
 function renderCards(){
   const v=$('#v-study'),cd=study.card;document.body.classList.add('solving');
   if(cd.i>=cd.ids.length){document.body.classList.remove('solving');const r=cd.res,tot=r.know+r.unsure+r.again,rate=tot?r.know/tot:0;
-    v.innerHTML=`<div class="card"><div class="done-head"><div><b>카드 학습 끝</b><div class="done-msg">${rate>=.8?'거의 다 외웠어요!':rate>=.5?'절반 넘게 기억해요.':'몰랐던 카드는 내일 다시 나와요.'}</div><p class="muted" style="margin:0">${esc(cd.label)} · ${tot}장</p></div>${cat(rate>=.8?'happy':rate>=.5?'smug':'sad','done-cat')}</div>
+    v.innerHTML=`<div class="card"><div class="done-head"><div><b>카드 학습 끝</b><div class="done-msg">${!tot?'판정 없이 넘긴 카드만 있어요.':rate>=.8?'거의 다 외웠어요!':rate>=.5?'절반 넘게 기억해요.':'몰랐던 카드는 내일 다시 나와요.'}</div><p class="muted" style="margin:0">${esc(cd.label)} · ${tot}장${r.skip?` · 넘김 ${r.skip}장`:''}</p></div>${cat(rate>=.8?'happy':rate>=.5?'smug':'sad','done-cat')}</div>
       <div class="stats"><div><b>${r.know}</b>알아요</div><div><b>${r.unsure}</b>애매해요</div><div><b>${r.again}</b>몰라요</div></div>
-      <div class="row"><button class="btn" id="cdHome">학습 홈으로</button>${r.again+r.unsure?'<button class="btn pri" id="cdRe">모르는 카드 다시</button>':''}</div></div>`;
-    $('#cdHome').onclick=()=>{study.view=study.sc?'scope':'home';renderStudy()};const re=$('#cdRe');if(re)re.onclick=()=>startCards(cd.ids.filter(id=>(S.study[id]||{}).box<=1||cd.miss&&cd.miss.has(id)),cd.label+' 다시');return}
+      <div class="row"><button class="btn" id="cdHome">학습 홈으로</button>${r.again+r.unsure?'<button class="btn pri" id="cdRe">모르는 카드 다시</button>':''}${cd.skipped.size?'<button class="btn" id="cdSkip">넘긴 카드 다시</button>':''}</div></div>`;
+    $('#cdHome').onclick=()=>{study.view=study.sc?'scope':'home';renderStudy()};const sk=$('#cdSkip');if(sk)sk.onclick=()=>startCards([...cd.skipped],cd.label+' 넘긴 카드');const re=$('#cdRe');if(re)re.onclick=()=>startCards(cd.ids.filter(id=>(S.study[id]||{}).box<=1||cd.miss&&cd.miss.has(id)),cd.label+' 다시');return}
   const c=findConcept(cd.ids[cd.i]),descFront=cd.front==='desc';
   const front=descFront?`<div class="fc-q">${esc(maskTerm(c,c.d))}</div><div class="muted">${esc(SCOPE_NAMES[c.sc])} · ${esc(c.g)}</div>`:`<div class="fc-t">${esc(c.t)}</div>${c.en.length?`<div class="muted">${esc(c.en.join(' · '))}</div>`:''}`;
   const back=`<div class="fc-t">${esc(c.t)}</div>${c.en.length?`<div class="en">${esc(c.en.join(' · '))}</div>`:''}<div class="cd">${esc(c.d)}</div>${c.k.length?`<div class="kw">${c.k.map(k=>`<span>${esc(k)}</span>`).join('')}</div>`:''}${c.p?`<div class="cp">${esc(c.p)}</div>`:''}`;
@@ -2781,12 +2783,19 @@ function renderCards(){
   <div class="actbar" id="cardbar"></div>`;
   placeBars();
   // 카드는 몇 번이든 앞뒤로 뒤집을 수 있고, 한 번 뒤집어 본 뒤에는 판정 버튼이 계속 보인다
-  const bar=()=>{$('#cardbar').innerHTML=cd.seen?'<button class="btn" id="cAgain">✕ 몰라요</button><button class="btn" id="cUnsure">△ 애매해요</button><button class="btn pri" id="cKnow">✓ 알아요</button>':'<button class="btn pri" id="cFlip">정답 보기</button>';
+  const bar=()=>{$('#cardbar').innerHTML='<button class="btn text" id="cNext" aria-label="판정 없이 다음 카드">다음 ▶</button>'+(cd.seen?'<button class="btn" id="cAgain">✕ 몰라요</button><button class="btn" id="cUnsure" aria-label="애매해요">△ 애매</button><button class="btn pri" id="cKnow">✓ 알아요</button>':'<button class="btn pri" id="cFlip">정답 보기</button>');
+    $('#cNext').onclick=next;
     const f=$('#cFlip');if(f)f.onclick=flip;[['cAgain','again'],['cUnsure','unsure'],['cKnow','know']].forEach(([id,r])=>{const b=$('#'+id);if(b)b.onclick=()=>go(r)});placeBars()};
   const flip=()=>{cd.flip=!cd.flip;const el=$('#fc');el.classList.toggle('flipped',cd.flip);el.setAttribute('aria-pressed',cd.flip);el.children[0].setAttribute('aria-hidden',cd.flip);el.children[1].setAttribute('aria-hidden',!cd.flip);if(cd.flip&&!cd.seen){cd.seen=true;bar()}};
   $('#fc').onclick=flip;$('#fc').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();flip()}};
 
-  let moved=false;const go=res=>{if(moved)return;moved=true;studyMark(c.id,res);cd.res[res]++;if(res!=='know'){cd.miss=cd.miss||new Set();cd.miss.add(c.id)}cd.i++;cd.flip=false;cd.seen=false;renderCards();window.scrollTo(0,0)};
+  // 다음: 판정 없이 넘김(기록은 그대로). 카드를 왼쪽으로 밀어도 다음, 오른쪽으로 밀면 이전 카드
+  const next=()=>{if(moved)return;moved=true;cd.res.skip++;cd.skipped.add(c.id);cd.i++;cd.flip=false;cd.seen=false;renderCards();window.scrollTo(0,0)};
+  const prev=()=>{if(moved||cd.i===0)return;moved=true;cd.i--;cd.flip=false;cd.seen=false;renderCards()};
+  {const el=$('#fc');let x0=null,y0=0,swiped=false;el.addEventListener('touchstart',e=>{x0=e.touches[0].clientX;y0=e.touches[0].clientY;swiped=false},{passive:true});
+    el.addEventListener('touchend',e=>{if(x0===null)return;const dx=e.changedTouches[0].clientX-x0,dy=e.changedTouches[0].clientY-y0;x0=null;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.5){swiped=true;dx<0?next():prev()}});
+    el.addEventListener('click',e=>{if(swiped){e.stopImmediatePropagation();swiped=false}},true)}
+  let moved=false;const go=res=>{if(moved)return;moved=true;if(cd.skipped.delete(c.id))cd.res.skip--;studyMark(c.id,res);cd.res[res]++;if(res!=='know'){cd.miss=cd.miss||new Set();cd.miss.add(c.id)}cd.i++;cd.flip=false;cd.seen=false;renderCards();window.scrollTo(0,0)};
   bar();
 
   $('#cdEnd').onclick=()=>{cd.ids=cd.ids.slice(0,cd.i);renderCards()};
